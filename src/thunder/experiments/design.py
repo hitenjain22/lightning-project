@@ -70,6 +70,32 @@ def angular_variance(
     return np.where(det > 1e-30 * np.maximum(f[..., 0, 0] * f[..., 1, 1], 1e-300), var, np.inf)
 
 
+def plane_wave_bias(positions: FloatArray, sources: FloatArray, c: float = 343.0) -> FloatArray:
+    """Direction error (deg) of the far-field (plane-wave) fit for exact, noise-free arrivals
+    from point sources at `sources` (K, 3): the wavefront-curvature bias of Methods A and B.
+
+    The curvature term of the arrival times is quadratic in mic position, so it enters the fit
+    through the layout's third moments: it vanishes (to O(1/R^2)) for layouts symmetric about
+    their centroid and for regular polygons other than the triangle, and is O(aperture^2 / R)
+    otherwise (a raised mast mic, L-shapes, irregular placements). The bound above, a pure
+    variance, cannot see it.
+    """
+    from thunder.recon.tdoa import solve_direction  # local: design is analysis-side code
+
+    m = np.asarray(positions, dtype=float)
+    n = len(m)
+    ii, jj = np.triu_indices(n, 1)
+    diffs = m[jj] - m[ii]
+    centroid = m.mean(axis=0)
+    out = np.empty(len(sources))
+    for k, x in enumerate(np.asarray(sources, dtype=float)):
+        t = np.linalg.norm(m - x, axis=1) / c
+        fit = solve_direction(diffs, t[jj] - t[ii], np.ones(len(diffs)), c, 1e-12)
+        u = (x - centroid) / np.linalg.norm(x - centroid)
+        out[k] = np.degrees(np.arccos(np.clip(fit.u @ u, -1.0, 1.0)))
+    return out
+
+
 @dataclass(frozen=True)
 class Surrogate:
     rms_angular_error_deg: float  # sqrt(mean CRB angular variance) over the direction set

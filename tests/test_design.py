@@ -10,6 +10,7 @@ from thunder.experiments.design import (
     evaluate_layout,
     fisher_direction,
     optimize_layout,
+    plane_wave_bias,
 )
 from thunder.sensors.arrays import circle, square
 
@@ -93,3 +94,22 @@ def test_optimizer_respects_aperture_and_beats_parametric(n, criterion, mast):
             assert o.surrogate.rms_angular_error_deg <= p.rms_angular_error_deg * (1 + 1e-12)
         else:
             assert o.surrogate.mean_log_det >= p.mean_log_det - 1e-12
+
+
+def test_plane_wave_bias_vanishes_for_symmetric_layouts_and_scales_as_one_over_range():
+    rng = np.random.default_rng(3)
+    az, el = rng.uniform(0, 2 * np.pi, 30), np.radians(rng.uniform(10, 60, 30))
+    u = np.column_stack([np.cos(el) * np.sin(az), np.cos(el) * np.cos(az), np.sin(el)])
+    sym = square(50.0, 1.5, center=True)
+    mast = sym.copy()
+    mast[-1, 2] = 10.0  # one raised mic: asymmetric in z
+    for r in (2000.0, 20000.0):
+        src_sym = sym.mean(axis=0) + r * u
+        src_mast = mast.mean(axis=0) + r * u
+        assert np.median(plane_wave_bias(sym, src_sym)) < 0.004 * (2000.0 / r) ** 2  # O(1/R^2), tiny
+        b = np.median(plane_wave_bias(mast, src_mast))
+        if r == 2000.0:
+            b2k = b
+    # asymmetric: O(1/R) (10x range -> 10x smaller), and far above the symmetric O(1/R^2) level
+    assert b2k > 0.05
+    assert b == pytest.approx(b2k / 10.0, rel=0.05)
