@@ -120,11 +120,16 @@ def optimize_layout(
     sigma_t: float = 1e-4,
     c: float = 343.0,
     maxiter: int = 400,
+    min_separation_frac: float = 0.2,
 ) -> OptimizedLayout:
-    """Free mic positions optimizing the A- or D-criterion under the aperture constraint.
+    """Free mic positions optimizing the A- or D-criterion under the placement constraints.
 
-    Variables: x, y of every mic (and the height of mic 0 if `mast`). The aperture constraint
-    is a penalty proportional to the excess of the largest horizontal distance.
+    Variables: x, y of every mic (and the height of mic 0 if `mast`). Constraints (penalties
+    during the search, checked exactly on the result): largest horizontal distance <= aperture,
+    and every pair of mics at least `min_separation_frac * aperture` apart (3-D). The bound
+    assumes independent timing errors, so without a minimum spacing it rewards stacking mics
+    in one spot (each copy "halves" the variance); real mics that close hear the same waveform
+    and noise, so their errors are correlated and the copy adds almost nothing (E2 finding).
     """
     if criterion not in ("A", "D"):
         raise ValueError("criterion must be 'A' or 'D'")
@@ -141,6 +146,7 @@ def optimize_layout(
     def objective(v: FloatArray) -> float:
         p = unpack(v)
         excess = max(float(np.max(pdist(p[:, :2]))) - aperture, 0.0) / aperture
+        excess += max(min_sep - float(np.min(pdist(p))), 0.0) / aperture
         if criterion == "A":
             var = angular_variance(p, az, el, sigma_t, c)
             value = float(np.log(np.mean(np.minimum(var, 1e6))))  # log: scale-free, well conditioned
@@ -149,6 +155,7 @@ def optimize_layout(
             value = -float(np.mean(np.log(np.maximum(det, 1e-300))))
         return value + 1e3 * excess + 1e3 * excess**2
 
+    min_sep = min_separation_frac * aperture
     bounds = [(-0.75, 0.75)] * (2 * n_mics) + ([(mic_height, mast_height_max)] if mast else [])
     init = _initial_population(
         n_mics,
@@ -190,7 +197,10 @@ def optimize_layout(
         sv = evaluate_layout(q, sigma_t, c)
         return sv.rms_angular_error_deg if criterion == "A" else -sv.mean_log_det
 
-    best = min(candidates, key=score)
+    feasible = [q for q in candidates if float(np.min(pdist(q))) >= min_sep * (1 - 1e-9)]
+    if not feasible:
+        raise ValueError(f"no layout of {n_mics} mics satisfies the minimum separation {min_sep:g} m")
+    best = min(feasible, key=score)
     return OptimizedLayout(
         best, criterion, evaluate_layout(best, sigma_t, c), float(np.max(pdist(best[:, :2])))
     )

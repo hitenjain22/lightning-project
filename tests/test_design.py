@@ -86,6 +86,7 @@ def test_optimizer_respects_aperture_and_beats_parametric(n, criterion, mast):
     assert np.all((z >= 1.5 - 1e-9) & (z <= 10.0 + 1e-9))
     if not mast:
         np.testing.assert_allclose(z, 1.5)
+    assert float(np.min(pdist(o.positions))) >= 0.2 * aperture * (1 - 1e-9)  # no stacked mics
     for shape in _unit_shapes(n):
         p = evaluate_layout(np.column_stack([shape * aperture, np.full(n, 1.5)]))
         if criterion == "A":

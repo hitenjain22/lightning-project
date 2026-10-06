@@ -13,6 +13,7 @@ evolution, 4 full simulation of everything on the same bolts: does the surrogate
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -78,14 +79,24 @@ DISTRIBUTED = {
 }
 
 
-def _optimize(args: tuple[int, str, bool, int]) -> tuple[str, list, dict]:
-    n, crit, mast, maxiter = args
-    o = optimize_layout(n, DESIGN_APERTURE, crit, mast=mast, sigma_t=SIGMA_T, maxiter=maxiter, seed=n)
+def _optimize(args: tuple[int, str, bool, int, float]) -> tuple[str, list, dict]:
+    n, crit, mast, maxiter, min_sep = args
+    o = optimize_layout(
+        n,
+        DESIGN_APERTURE,
+        crit,
+        mast=mast,
+        sigma_t=SIGMA_T,
+        maxiter=maxiter,
+        seed=n,
+        min_separation_frac=min_sep,
+    )
     name = f"opt{crit}{n}" + ("_mast" if mast else "")
     info = {
         "rms_deg": o.surrogate.rms_angular_error_deg,
         "logdet": o.surrogate.mean_log_det,
         "aperture_m": o.aperture_m,
+        "min_separation_frac": min_sep,
     }
     return name, np.round(o.positions, 4).tolist(), info
 
@@ -104,10 +115,12 @@ def surrogate(array: dict, draws: int = 200) -> dict[str, float]:
     }
 
 
-def build(maxiter: int, workers: int) -> tuple[dict[str, dict], dict[str, dict]]:
+def build(
+    maxiter: int, workers: int, min_sep: float = 0.2, only: str | None = None
+) -> tuple[dict[str, dict], dict[str, dict]]:
     """Variants (array/method overrides, grouped so shared stages are adjacent) and their labels."""
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        opt = list(pool.map(_optimize, [(*o, maxiter) for o in OPTIMIZED]))
+        opt = list(pool.map(_optimize, [(*o, maxiter, min_sep) for o in OPTIMIZED]))
     arrays: list[tuple[str, dict, dict]] = []  # (label, array config, extra meta)
     for name, a in PARAMETRIC.items():
         for ap in APERTURES if name in APERTURE_SWEEP else [DESIGN_APERTURE]:
@@ -141,6 +154,10 @@ def build(maxiter: int, workers: int) -> tuple[dict[str, dict], dict[str, dict]]
                 **extra,
                 **surrogate(a),
             }
+    if only is not None:
+        keep = [v for v in variants if re.fullmatch(only, v)]
+        variants = {v: variants[v] for v in keep}
+        meta = {v: meta[v] for v in keep}
     return variants, meta
 
 
@@ -351,6 +368,7 @@ def _plot_mic_count(vt: pd.DataFrame, k: float, path: Path) -> None:
     ax[1].plot(opt_a["n_mics"], opt_a["coverage_main_50m"], "s", color="tab:red", label="A-optimal")
     ax[1].set_xlabel("number of mics")
     ax[1].set_ylabel("main-channel coverage within 50 m")
+    ax[1].set_ylim(0.5, 1.0)  # fixed range: autoscaling made few-point differences look large
     ax[1].legend(fontsize=8)
     fig.suptitle(f"Mic count at {DESIGN_APERTURE:g} m aperture")
     fig.tight_layout()
@@ -375,6 +393,14 @@ def main() -> None:
     ap.add_argument("--maxiter", type=int, default=300, help="differential evolution iterations")
     ap.add_argument("--docs-prefix", default=None, help="copy figures to docs/figures/<prefix>*.png")
     ap.add_argument("--results-root")
+    ap.add_argument(
+        "--min-separation",
+        type=float,
+        default=0.2,
+        help="minimum mic spacing of optimized layouts, as a fraction of the aperture",
+    )
+    ap.add_argument("--only", help="regex: run only matching variants (short paired report, no figures)")
+    ap.add_argument("--experiment", help="override the experiment name (run folder)")
     args = ap.parse_args()
     if args.analyze:
         analyze(args.analyze, args.docs_prefix)
@@ -384,12 +410,30 @@ def main() -> None:
     upd = {"monte_carlo": cfg.monte_carlo.model_copy(update=mc)} if cfg.monte_carlo else {}
     if args.results_root:
         upd["results_root"] = args.results_root
+    if args.experiment:
+        upd["experiment"] = args.experiment
     cfg = cfg.model_copy(update=upd)
-    variants, meta = build(args.maxiter, args.workers or 4)
+    variants, meta = build(args.maxiter, args.workers or 4, args.min_separation, args.only)
     print(f"{len(variants)} variants")
     run_dir = run_variants(cfg, variants, meta)
     print(f"Wrote {run_dir}")
-    analyze(run_dir, args.docs_prefix)
+    if args.only is None:
+        analyze(run_dir, args.docs_prefix)
+    else:
+        short_report(run_dir)
+
+
+def short_report(run_dir: Path) -> None:
+    """Paired comparison of a subset run (no figures)."""
+    table, _, _, meta = load_run(run_dir)
+    vt = variant_table(table).join(pd.DataFrame(meta).T.infer_objects())
+    base = BASELINE if BASELINE in set(table["variant"]) else str(table["variant"].iloc[0])
+    r = paired_ratio(table, "angular_error_median_deg", base)
+    vt["ang_ratio"], vt["ang_ratio_lo"], vt["ang_ratio_hi"] = r["ratio"], r["lo"], r["hi"]
+    vt.to_csv(run_dir / "e2_table.csv")
+    text = f"# E2 subset run: {run_dir.name} (ratios vs {base})\n\n" + md_table(_rows(vt))
+    write_markdown(run_dir / "e2_summary.md", text)
+    print(text)
 
 
 if __name__ == "__main__":
