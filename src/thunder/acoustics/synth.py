@@ -344,11 +344,17 @@ def synthesize(
 
     starts = [np.minimum(e[0], e[1]) for entries in per_mic for e in entries if len(e[0])]
     ends = [np.maximum(e[0], e[1]) for entries in per_mic for e in entries if len(e[0])]
-    if not starts:
-        raise ValueError("no emitter reaches any microphone (all in the acoustic shadow)")
-    if min(float(np.min(t)) for t in starts) < 0:
-        raise ValueError("a clock offset makes an arrival precede the recording start (t < 0)")
-    t_last = max(float(np.max(t)) for t in ends)
+    if starts:
+        if min(float(np.min(t)) for t in starts) < 0:
+            raise ValueError("a clock offset makes an arrival precede the recording start (t < 0)")
+        t_last = max(float(np.max(t)) for t in ends)
+    else:
+        # The whole channel is in the acoustic shadow: a silent recording (a real outcome at
+        # long range, which experiments must count, not crash on). Its length is when the
+        # sound would have arrived along straight lines, so sensors still add their noise.
+        far = max(float(np.max(np.linalg.norm(em.midpoint - m, axis=1))) for m in true_pos)
+        c_ground = float(atmosphere.sound_speed(np.array([float(np.min(true_pos[:, 2]))]))[0])
+        t_last = far / c_ground + float(strokes[-1])
     t_end = (
         t_last + float(np.max(duration)) + TAIL_PAD_S + (ABSORPTION_PAD_S if atmosphere.absorption else 0.0)
     )

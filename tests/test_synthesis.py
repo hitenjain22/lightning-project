@@ -245,3 +245,38 @@ def test_micro_tortuosity_fills_end_on_gaps_but_keeps_directivity():
     assert rms_r > 30 * rms_s
     e_r = (rough.signals**2).sum(axis=1)
     assert e_r[0] / e_r[1] > 100  # broadside still dominates
+
+
+def test_channel_entirely_in_shadow_gives_silent_recording_not_an_error():
+    """A low source 15 km away, heard against a 10 m/s headwind with a 10 K/km lapse: no ray
+    reaches the array. That is a real outcome (E5), so the chain must run and report nothing."""
+    from thunder.atmosphere.profiles import build_atmosphere
+    from thunder.config import AtmosphereConfig, ReconstructionConfig, SensorsConfig
+    from thunder.recon import reconstruct
+    from thunder.sensors.corruption import corrupt
+    from thunder.types import MicArray
+
+    atm = build_atmosphere(
+        AtmosphereConfig(
+            model="stratified", lapse_rate_k_per_km=10.0, wind={"speed_mps": 10.0, "direction_from_deg": 90.0}
+        )
+    )
+    ch = Channel(
+        np.array([[-15000.0, 0.0, 300.0], [-15000.0, 0.0, 50.0]]),
+        np.array([[0, 1]]),
+        np.array([1e6]),
+        np.array([0]),
+        np.array([True]),
+        np.array([False]),
+    )
+    array = MicArray.ideal(
+        np.array([[0.0, 0.0, 1.5], [20.0, 0.0, 1.5], [0.0, 20.0, 1.5], [-20.0, -20.0, 1.5]])
+    )
+    rec = synthesize(ch, atm, array, FS, 8, 0.5, ACOUSTIC_EFFICIENCY)
+    assert not np.any(rec.signals)
+    assert rec.signals.shape[1] / FS >= 15000.0 / 350.0  # as long as the sound would have taken
+    assert np.all(np.isnan(rec.truth.segment_arrival_times))
+    noisy = corrupt(rec, array, SensorsConfig(noise={"background_db_spl": 45.0}), np.random.default_rng(0))
+    assert np.any(noisy.signals)
+    r = reconstruct(noisy, array.nominal_positions, atm, ReconstructionConfig(method="B"))
+    assert r.n_points == 0
