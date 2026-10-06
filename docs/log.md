@@ -134,3 +134,44 @@ This is exact for wind, including the lateral drift that the common "effective s
 - `Atmosphere` gains `propagate_reflected`, `paths`, `locate`, `attenuation_db`, the effect toggles and `is_uniform`.
 - `propagate` takes an optional `guess`.
 - `RayTableConfig` was replaced by `RayConfig`, which sets the solver numerics.
+
+## 2026-10-06: M6 Methods B and C
+
+**Method B (`recon/srp.py`): steered response power with β-PHAT, several sources per window.**
+- **Steering over horizontal slowness.** Steering runs over u = c·s_h, not over 3D points on a range shell (the spec's suggestion). Across a compact array, inter-mic delays depend only on the slowness at the array, s_h being the ray's conserved slowness, with s_z from the dispersion relation at mic height. So one grid serves any stratified atmosphere, and the assumed atmosphere enters only when detections are placed (straight rays, or `locate`). This is the far-field form; wavefront curvature is Method C's job.
+- **Per window:** GCC-PHAT curves from the reference mic to each other mic; SRP on a 0.02 grid in u; local maxima with non-maximum suppression; a fine search at 10× resolution.
+- **Per peak:** matched-window TDOAs searched only ±2 ms around the peak's predicted lags, so a weaker source isn't captured by a stronger one. The same constrained slowness fit as A. Arrival time comes from a delay-and-sum beam steered to that source, so two sources in one window get their own ranges.
+- **Gate result:** two equally loud simultaneous sources 90° apart are both found (direction error 0.01°, range within 1%). A finds neither, because its single-direction fit fails.
+
+**Method C (`recon/multilat.py`): absolute-time multilateration.**
+- **Observed times:** per-mic delays come from all pair TDOAs by weighted least squares; with the reference arrival time and t0, they give absolute travel times.
+- **Solve:** robust soft-ℓ1 Levenberg–Marquardt Gauss–Newton through the assumed atmosphere, batched over all windows, with the free gradient ∂T/∂x = −s_source and eigenrays warm-started from the previous iteration.
+- **Verified:** converges from 40 m perturbations to under 5 cm through wind with veer.
+- **Near field:** on a 300 m distributed array with a source 900 m away, C is within 1 m. The plane-wave fit's curvature misfit (up to ~146 ms) makes A reject the window entirely.
+- **Seeding:** C seeds from every coherent window, not only windows passing A's plane-wave gates. My first version required A's gates, which made C useless exactly where it's needed.
+
+**Bug: β-PHAT normalization (introduced in M4).** The correlation was scaled by nfft/(2·N_band), which is only correct for β = 1, where every weight has unit magnitude. With β = 0.6, peak heights scaled with signal amplitude to the power 2(1−β): peaks of 16–21 were observed, so every peak gate was meaningless. That's why M4's tuning found `min_peak` "never binds".
+- **Fix:** divide by Σ|w_k|, so a perfect match peaks at exactly 1 for any β and level (tested).
+- **Impact:** lags are unchanged; least-squares weights and gates change. Method A on the development bolts: 1.40 m median (was 1.37) and 0.83 main coverage (unchanged). `min_peak` still doesn't bind for A, clean or at 25 / 15 dB, because the residual gate does the filtering. The goldens were regenerated. The noisy golden dropped from 47 to 32 points, matching M4's development noise numbers; the earlier 47 was an artifact of the bug.
+
+**B gates tuned on development bolts (seeds 5000+).** Once peaks were comparable, false B detections were SRP sidelobes, almost always secondary peaks.
+
+| | Weakest pair peak | Fit residual (median) |
+| --- | --- | --- |
+| False detections | p90 0.43 | 0.5 ms |
+| True detections | median 0.99 | 0.13 ms |
+
+- **Why a combined gate:** a coherence floor of 0.6 alone kept 97% of true and rejected 98.6% of false detections. But two equally strong sources split the coherence (weakest pair 0.56–0.65), so it dropped real multi-source detections.
+- **Chosen:** weakest pair ≥ 0.4 AND residual ≤ 0.5 ms. It gave the best coverage clean, at 25 dB and at 15 dB, with accuracy close to A's. Development bolts, main coverage within 50 m:
+
+  | Condition | A | B |
+  | --- | --- | --- |
+  | Clean | 0.830 | 0.877 |
+  | 25 dB SNR | 0.598 | 0.648 |
+  | 15 dB SNR | 0.272 | 0.324 |
+
+  Clean all-channel coverage rose from 0.75 to 0.82. The SRP power floor was split from `min_peak`, because pass-1 (mismatched-window) power runs lower than matched pair peaks.
+
+**Refactor.** A, B and C share `prepare`, `coarse_shifts`, `matched_pairs`, `energy_time`, `place_points` and `assemble`. Method A was bit-identical (to 1e-12 on all goldens) before the normalization fix.
+
+**M6 comparison (clean commit `43805f8`):** the same 60 realistic-atmosphere bolts as M5. With the true atmosphere, B raises all-channel coverage within 50 m from 76% to 82% and main-channel coverage from 83% to 88%, at 1.8 m vs 1.7 m median error. C equals A on this compact array, where wavefront curvature is negligible. With the mismatched atmosphere, all three methods sit at about 136 m, because unknown wind dominates. Speed per bolt: A 2.2 s, B 6.1 s, C 19.6 s. C's batched multilateration solves eigenrays for every mic on every iteration, which is the price of exact curvature in a stratified atmosphere.
