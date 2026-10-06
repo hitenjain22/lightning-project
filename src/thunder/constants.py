@@ -104,6 +104,33 @@ MICRO_TORTUOSITY_SCALE = 1.0
 # Only the absolute pressure level depends on it (clipping, self-noise); timing and shape do not.
 ACOUSTIC_EFFICIENCY = 0.002
 
+# --- Sensor-site noise (Phase 4) --------------------------------------------
+
+# Wind-noise RMS pressure as a fraction of the dynamic pressure 0.5 rho U^2 for a
+# windscreened mic. Order-of-magnitude assumption giving ~0.15 Pa at 5 m/s, in line with
+# commonly reported windscreened wind-noise levels (Strasberg 1988, as recalled).  # VERIFY
+WIND_NOISE_COEFF = 0.01
+
+# Turbulent eddy length scale setting the wind-noise corner frequency f_c = U / L, m.
+# Assumption (energy-containing eddies near the ground of order 1 m).  # VERIFY
+WIND_EDDY_SCALE_M = 1.0
+
+# Wind-noise coherence decay constant a in exp(-a f d / U) (Corcos-type convected
+# turbulence model). Assumption; makes wind noise incoherent beyond a few meters in the
+# thunder band as SPEC.md requires.  # VERIFY
+WIND_COHERENCE_DECAY = 1.0
+
+# Raindrop impact rate on a windscreened mic, impacts per second. Assumption.  # VERIFY
+RAIN_IMPACT_RATE_HZ = 1000.0
+
+# Corner of the first-order high-pass shaping each raindrop impact, Hz. Drop impacts are
+# concentrated above ~1 kHz; placeholder.  # VERIFY
+RAIN_HIGHPASS_HZ = 500.0
+
+# Band over which microphone datasheets quote self-noise (equivalent input noise), Hz.
+# Standard audio-band convention (A-weighting ignored).
+SELF_NOISE_SPEC_BAND_HZ = (20.0, 20000.0)
+
 
 def sound_speed_dry(temperature_k: float) -> float:
     """Adiabatic sound speed in dry air (m/s) at temperature T (K): c = sqrt(gamma R T)."""

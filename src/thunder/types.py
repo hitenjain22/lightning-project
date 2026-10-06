@@ -148,17 +148,19 @@ class UniformAtmosphere(Atmosphere):
 
 @dataclass(frozen=True)
 class MicArray:
-    """Microphone array: what the experimenter believes (nominal) and what is true.
+    """Microphone array: what the experimenter believes (nominal) and the hidden hardware truth.
 
-    Named MicArray (not Array) to avoid confusion with numpy arrays.
+    Named MicArray (not Array) to avoid confusion with numpy arrays. Recorder clock model:
+    a pulse arriving at true time t (since the flash) is recorded at clock time
+        tau = (1 + clock_drift_ppm * 1e-6) * t + clock_offset.
     """
 
     nominal_positions: FloatArray  # (M, 3) m, what reconstruction sees
     true_positions: FloatArray  # (M, 3) m, used only by synthesis
     clock_offset: FloatArray  # (M,) s
     clock_drift_ppm: FloatArray  # (M,)
-    frequency_response: str = "measurement"  # preset name, see Phase 4
-    noise: dict[str, Any] = field(default_factory=dict)
+    gain_db: FloatArray | None = None  # (M,) sensitivity error; None = 0 dB
+    corner_scale: FloatArray | None = None  # (M,) multiplier on filter corner frequencies; None = 1
 
     def __post_init__(self) -> None:
         _check_shape("nominal_positions", self.nominal_positions, (None, 3))
@@ -166,14 +168,28 @@ class MicArray:
         _check_shape("true_positions", self.true_positions, (m, 3))
         _check_shape("clock_offset", self.clock_offset, (m,))
         _check_shape("clock_drift_ppm", self.clock_drift_ppm, (m,))
+        if self.gain_db is None:
+            object.__setattr__(self, "gain_db", np.zeros(m))
+        if self.corner_scale is None:
+            object.__setattr__(self, "corner_scale", np.ones(m))
+        _check_shape("gain_db", np.asarray(self.gain_db), (m,))
+        _check_shape("corner_scale", np.asarray(self.corner_scale), (m,))
 
     @property
     def n_mics(self) -> int:
         return int(self.nominal_positions.shape[0])
 
+    @property
+    def has_clock_error(self) -> bool:
+        return bool(np.any(self.clock_offset != 0) or np.any(self.clock_drift_ppm != 0))
+
+    def recorder_time(self, t: FloatArray, mic: int) -> FloatArray:
+        """Clock time at which mic `mic` records an event at true time t."""
+        return (1.0 + self.clock_drift_ppm[mic] * 1e-6) * np.asarray(t) + self.clock_offset[mic]
+
     @classmethod
     def ideal(cls, positions: FloatArray) -> MicArray:
-        """Array with perfectly known positions and perfect clocks."""
+        """Array with perfectly known positions, perfect clocks and identical mics."""
         p = np.asarray(positions, dtype=float)
         m = p.shape[0]
         return cls(p, p.copy(), np.zeros(m), np.zeros(m))

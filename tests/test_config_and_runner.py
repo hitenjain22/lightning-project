@@ -55,9 +55,12 @@ def test_pipeline_with_channel_saves_channel(tmp_path):
     assert cfg.channel is not None
     run_dir = run_pipeline(cfg)
     metrics = json.loads((run_dir / "metrics.json").read_text())
-    assert metrics["stages"] == ["generate", "synthesize"]
-    assert len(list((run_dir / "audio").glob("*.wav"))) == 4
+    assert metrics["stages"] == ["generate", "synthesize", "sensors"]
+    assert "t0_error_s" in metrics["sensors"] and "background_power_band_pa2" in metrics["sensors"]
+    assert len(list((run_dir / "audio").glob("*.wav"))) == 5
     assert metrics["channel"]["total_length_m"] > 1000
     with np.load(run_dir / "arrays.npz") as z:
         assert z["channel_nodes"].shape[1] == 3
         assert len(z["channel_segments"]) == len(z["channel_nodes"]) - 1
+        assert z["mic_positions"].shape == z["true_mic_positions"].shape == (5, 3)
+        assert not np.array_equal(z["mic_positions"], z["true_mic_positions"])  # surveyed error

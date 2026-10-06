@@ -26,7 +26,7 @@ import numpy as np
 from scipy import signal
 
 from thunder.acoustics.source import line_amplitude, nwave_kernel, pulse_duration
-from thunder.types import Atmosphere, Channel, FloatArray, GroundTruth, IntArray, Recording
+from thunder.types import Atmosphere, Channel, FloatArray, GroundTruth, IntArray, MicArray, Recording
 
 # Pulse-duration group width (relative). Pieces in one group share the group's N-wave;
 # 0.5% duration error shifts the spectral peak by 0.5%, far below model uncertainty.
@@ -157,7 +157,7 @@ def deposit(t_a: FloatArray, t_b: FloatArray, mass: FloatArray, n_grid: int, dt:
 def synthesize(
     ch: Channel,
     atmosphere: Atmosphere,
-    mic_positions: FloatArray,
+    mics: FloatArray | MicArray,
     sample_rate: float,
     oversample: int,
     emitter_spacing: float,
@@ -168,10 +168,19 @@ def synthesize(
 ) -> Recording:
     """Clean recording of the thunder from `ch` at each microphone. The flash is at t = 0.
 
+    mics: plain positions (an ideal array), or a MicArray whose hidden truth is applied
+    exactly: sound is synthesized at the true positions, and every arrival time t is mapped
+    to the recorder's clock tau = (1 + drift) t + offset before deposition (the ppm change
+    of pulse length is neglected). The Recording carries the nominal positions.
+
     micro_turn_mean (rad) enables sub-segment tortuosity (see `discretize`); None gives
     perfectly straight segments, as the analytic tests need.
     """
-    mics = np.atleast_2d(np.asarray(mic_positions, dtype=float))
+    if isinstance(mics, MicArray):
+        array = mics
+    else:
+        array = MicArray.ideal(np.atleast_2d(np.asarray(mics, dtype=float)))
+    true_pos = array.true_positions
     em = discretize(ch, emitter_spacing, rng, micro_turn_mean, micro_scale)
     z = em.midpoint[:, 2]
     duration = pulse_duration(em.energy_per_length, atmosphere.pressure(z), atmosphere.sound_speed(z))
@@ -187,19 +196,25 @@ def synthesize(
     )
 
     paths = [
-        tuple(atmosphere.propagate(pts, m) for pts in (em.start, em.end, em.midpoint)) for m in mics
+        tuple(atmosphere.propagate(pts, m) for pts in (em.start, em.end, em.midpoint)) for m in true_pos
     ]
-    t_last = max(float(np.max(np.maximum(pa.travel_time, pb.travel_time))) for pa, pb, _ in paths)
-    t_end = t_last + float(strokes[-1]) + float(np.max(duration)) + TAIL_PAD_S
+    times = [
+        (array.recorder_time(pa.travel_time[fire_idx] + fire_shift, i),
+         array.recorder_time(pb.travel_time[fire_idx] + fire_shift, i))
+        for i, (pa, pb, _) in enumerate(paths)
+    ]
+    t_first = min(float(np.min(np.minimum(ta, tb))) for ta, tb in times)
+    if t_first < 0:
+        raise ValueError("a clock offset makes an arrival precede the recording start (t < 0)")
+    t_last = max(float(np.max(np.maximum(ta, tb))) for ta, tb in times)
+    t_end = t_last + float(np.max(duration)) + TAIL_PAD_S
     n_out = int(math.ceil(t_end * sample_rate))
     n_grid = n_out * oversample
     dt = 1.0 / (sample_rate * oversample)
 
-    signals = np.zeros((len(mics), n_out))
-    for i, (pa, pb, pm) in enumerate(paths):
+    signals = np.zeros((len(paths), n_out))
+    for i, ((_, _, pm), (t_a, t_b)) in enumerate(zip(paths, times, strict=True)):
         mass = q * em.length * pm.amplitude_factor
-        t_a = pa.travel_time[fire_idx] + fire_shift
-        t_b = pb.travel_time[fire_idx] + fire_shift
         m_all = mass[fire_idx]
         g_all = group[fire_idx]
         fine = np.zeros(n_grid)
@@ -213,14 +228,19 @@ def synthesize(
     return Recording(
         signals=signals,
         sample_rate=float(sample_rate),
-        nominal_mic_positions=mics.copy(),
+        nominal_mic_positions=array.nominal_positions.copy(),
         reported_t0=0.0,
-        truth=_ground_truth(ch, atmosphere, mics, efficiency),
+        truth=_ground_truth(ch, atmosphere, array, efficiency),
     )
 
 
-def _ground_truth(ch: Channel, atmosphere: Atmosphere, mics: FloatArray, efficiency: float) -> GroundTruth:
-    """Per segment and mic: arrival time and direction (from the midpoint, first stroke) and amplitude."""
+def _ground_truth(ch: Channel, atmosphere: Atmosphere, array: MicArray, efficiency: float) -> GroundTruth:
+    """Per segment and mic: arrival time and direction (from the midpoint, first stroke) and amplitude.
+
+    `segment_arrival_times` are true physical times; `segment_arrival_times_recorder` are the
+    same events read on each mic's clock.
+    """
+    mics = array.true_positions
     a, b = ch.segment_endpoints()
     mid = 0.5 * (a + b)
     z = mid[:, 2]
@@ -228,11 +248,15 @@ def _ground_truth(ch: Channel, atmosphere: Atmosphere, mics: FloatArray, efficie
     q = line_amplitude(ch.energy_per_length, atmosphere.density(z), duration, efficiency)
     seg_len = np.linalg.norm(b - a, axis=1)
     paths = [atmosphere.propagate(mid, m) for m in mics]
+    arrival = np.stack([p.travel_time for p in paths], axis=1)
     return GroundTruth(
         t0=0.0,
         mic_positions=mics.copy(),
-        segment_arrival_times=np.stack([p.travel_time for p in paths], axis=1),
+        segment_arrival_times=arrival,
         extra={
+            "segment_arrival_times_recorder": np.stack(
+                [array.recorder_time(arrival[:, i], i) for i in range(len(mics))], axis=1
+            ),
             "segment_amplitude": np.stack([q * seg_len * p.amplitude_factor for p in paths], axis=1),
             "segment_arrival_direction": np.stack([p.arrival_direction for p in paths], axis=1),
             "segment_pulse_duration": duration,

@@ -26,6 +26,8 @@ from thunder.atmosphere.profiles import build_atmosphere
 from thunder.channel.generator import generate_channel
 from thunder.channel.stats import channel_stats
 from thunder.config import RunConfig
+from thunder.sensors.arrays import build_mic_array
+from thunder.sensors.corruption import corrupt
 
 
 def git_commit(cwd: Path | None = None) -> dict[str, Any]:
@@ -77,14 +79,16 @@ def run_pipeline(cfg: RunConfig) -> Path:
     reconstruct, evaluate). A stage runs only if its config section is present.
     """
     run_dir = make_run_dir(cfg)
-    rng = np.random.default_rng(cfg.seed)
+    # Independent child streams per stage: changing one stage's settings never changes the
+    # random draws of another (e.g. a new noise level keeps the same bolt and array).
+    channel_rng, array_rng, synth_rng, sensor_rng = np.random.default_rng(cfg.seed).spawn(4)
 
     stages: list[str] = []
     metrics: dict[str, Any] = {"stages": stages}
     arrays: dict[str, np.ndarray] = {}
 
     if cfg.channel is not None:
-        ch = generate_channel(cfg.channel, rng, seed=cfg.seed)
+        ch = generate_channel(cfg.channel, channel_rng, seed=cfg.seed)
         stages.append("generate")
         metrics["channel"] = channel_stats(ch)
         arrays.update(
@@ -99,19 +103,37 @@ def run_pipeline(cfg: RunConfig) -> Path:
 
         if cfg.synthesis is not None:
             syn = cfg.synthesis
+            atm = build_atmosphere(cfg.atmosphere)
+            array = build_mic_array(cfg.array, cfg.sensors, array_rng)
             rec = synthesize(
                 ch,
-                build_atmosphere(cfg.atmosphere),
-                np.array(cfg.array.positions_m),
+                atm,
+                array,
                 cfg.sample_rate_hz,
                 cfg.oversample,
                 syn.emitter_spacing_m,
                 syn.acoustic_efficiency,
-                rng,
+                synth_rng,
                 syn.micro_turn_mean,
                 syn.micro_scale_m,
             )
             stages.append("synthesize")
+            if cfg.sensors is not None:
+                z_mic = np.array([float(np.mean(array.true_positions[:, 2]))])
+                rec = corrupt(
+                    rec, array, cfg.sensors, sensor_rng,
+                    sound_speed=float(atm.sound_speed(z_mic)[0]), air_density=float(atm.density(z_mic)[0]),
+                )
+                stages.append("sensors")
+                assert rec.truth is not None
+                metrics["sensors"] = {
+                    "t0_error_s": rec.truth.extra["t0_error"],
+                    "clock_offset_s": rec.truth.extra["clock_offset"].tolist(),
+                    "clock_drift_ppm": rec.truth.extra["clock_drift_ppm"].tolist(),
+                    "position_error_m": np.linalg.norm(array.true_positions - array.nominal_positions,
+                                                       axis=1).tolist(),
+                    **rec.truth.extra["corruption_info"],
+                }
             assert rec.truth is not None
             metrics["recording"] = {
                 "duration_s": rec.duration,
@@ -121,6 +143,7 @@ def run_pipeline(cfg: RunConfig) -> Path:
             arrays.update(
                 signals=rec.signals,
                 mic_positions=rec.nominal_mic_positions,
+                true_mic_positions=array.true_positions,
                 truth_segment_arrival_times=rec.truth.segment_arrival_times,
             )
             if syn.write_wav:

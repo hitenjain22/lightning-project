@@ -1,0 +1,16 @@
+# M3 deliverable: array presets, and each sensor corruption applied alone to one bolt.
+experiment: sensor_demo
+seed: 3
+description: Array preset plots; before/after waveforms and spectra for each corruption type.
+
+channel:
+  preset: branched
+  strike_distance_m: [3000.0, 3000.0]
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+
+synthesis:
+  emitter_spacing_m: 0.5
+  write_wav: false

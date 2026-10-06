@@ -14,12 +14,20 @@ atmosphere:
   temperature_c: 25.0
 
 array:
-  positions_m:              # 50 m square, mics 1.5 m above ground
-    - [-25.0, -25.0, 1.5]
-    - [25.0, -25.0, 1.5]
-    - [25.0, 25.0, 1.5]
-    - [-25.0, 25.0, 1.5]
+  layout: square_center     # triangle | square | square_center | circle | l_shape | cross | mast | random_disk | distributed | free_form
+  aperture_m: 50.0          # largest horizontal mic-to-mic distance
+  mic_height_m: 1.5
 
 synthesis:
   emitter_spacing_m: 0.5
   write_wav: true
+
+sensors:
+  mic: {preset: measurement}          # ideal | measurement | audio | phone
+  timing: {preset: gps_synced}        # perfect | shared_interface | gps_synced | hand_synced
+  position: {preset: surveyed}        # exact | surveyed | tape | consumer_gps
+  flash_time: {preset: photodiode}    # exact | photodiode | lightning_network | video_30fps
+  noise:
+    background_snr_db: 20.0           # in the 10-300 Hz band over the thunder window
+    background_color: pink
+    wind_speed_mps: 3.0
