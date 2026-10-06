@@ -57,14 +57,24 @@ def plot_arrays(path) -> None:
         raised = p[:, 2] > cfg.mic_height_m + 1e-9
         ax.scatter(p[~raised, 0], p[~raised, 1], s=60, color="#1f3a93", zorder=3)
         if raised.any():
-            ax.scatter(p[raised, 0], p[raised, 1], s=140, marker="^", color="#c0392b", zorder=3,
-                       label=f"mast, z = {p[raised, 2][0]:.0f} m")
+            ax.scatter(
+                p[raised, 0],
+                p[raised, 1],
+                s=140,
+                marker="^",
+                color="#c0392b",
+                zorder=3,
+                label=f"mast, z = {p[raised, 2][0]:.0f} m",
+            )
             ax.legend(loc="center right", fontsize=9)
         ax.set_aspect("equal", adjustable="datalim")
         ax.axhline(0, color="0.85", lw=0.8)
         ax.axvline(0, color="0.85", lw=0.8)
-        note = f"sub-array aperture {cfg.aperture_m:g} m" if layout == "distributed" else (
-            f"aperture {horizontal_aperture(p):.1f} m")
+        note = (
+            f"sub-array aperture {cfg.aperture_m:g} m"
+            if layout == "distributed"
+            else (f"aperture {horizontal_aperture(p):.1f} m")
+        )
         ax.set_title(f"{layout} ({len(p)} mics)\n{note}", fontsize=11)
         ax.set_xlabel("east (m)")
         ax.set_ylabel("north (m)")
@@ -90,8 +100,18 @@ def main() -> None:
 
     def make(sensors: SensorsConfig | None):
         arr = build_mic_array(cfg.array, sensors, np.random.default_rng(cfg.seed + 1))
-        rec = synthesize(ch, atm, arr, fs, cfg.oversample, syn.emitter_spacing_m, syn.acoustic_efficiency,
-                         np.random.default_rng(cfg.seed + 2), syn.micro_turn_mean, syn.micro_scale_m)
+        rec = synthesize(
+            ch,
+            atm,
+            arr,
+            fs,
+            cfg.oversample,
+            syn.emitter_spacing_m,
+            syn.acoustic_efficiency,
+            np.random.default_rng(cfg.seed + 2),
+            syn.micro_turn_mean,
+            syn.micro_scale_m,
+        )
         return arr, rec
 
     ideal_arr, clean = make(None)
@@ -117,15 +137,24 @@ def main() -> None:
         ex = out.truth.extra
         detail = {}
         if physical and "hand" in title:
-            detail = {"offset_ms": (1e3 * ex["clock_offset"]).round(2).tolist(),
-                      "drift_ppm": ex["clock_drift_ppm"].round(1).tolist()}
-            ax.text(0.99, 0.85, f"mic 0 offset {1e3 * ex['clock_offset'][0]:+.2f} ms", transform=ax.transAxes,
-                    ha="right", fontsize=9)
+            detail = {
+                "offset_ms": (1e3 * ex["clock_offset"]).round(2).tolist(),
+                "drift_ppm": ex["clock_drift_ppm"].round(1).tolist(),
+            }
+            ax.text(
+                0.99,
+                0.85,
+                f"mic 0 offset {1e3 * ex['clock_offset'][0]:+.2f} ms",
+                transform=ax.transAxes,
+                ha="right",
+                fontsize=9,
+            )
         if physical and "GPS" in title:
             err = np.linalg.norm(arr.true_positions - arr.nominal_positions, axis=1)
             detail = {"position_error_m": err.round(2).tolist()}
-            ax.text(0.99, 0.85, f"mic 0 displaced {err[0]:.1f} m", transform=ax.transAxes, ha="right",
-                    fontsize=9)
+            ax.text(
+                0.99, 0.85, f"mic 0 displaced {err[0]:.1f} m", transform=ax.transAxes, ha="right", fontsize=9
+            )
         summary[title] = {**ex["corruption_info"], **detail}
         f, p = signal.welch(y, fs, nperseg=4096)
         spectra[title] = (f, p)
@@ -137,8 +166,10 @@ def main() -> None:
 
     f, p_clean = signal.welch(x0, fs, nperseg=4096)
     fig, axes = plt.subplots(1, 2, figsize=(15, 5.5), sharey=True)
-    groups = (("noise", [k for k in spectra if "noise" in k]),
-              ("mic chain", [k for k in spectra if "mic" in k or "clipping" in k or "jitter" in k]))
+    groups = (
+        ("noise", [k for k in spectra if "noise" in k]),
+        ("mic chain", [k for k in spectra if "mic" in k or "clipping" in k or "jitter" in k]),
+    )
     for ax, (name, keys) in zip(axes, groups, strict=True):
         ax.loglog(f[1:], p_clean[1:], color="k", lw=1.8, label="clean thunder")
         for k in keys:

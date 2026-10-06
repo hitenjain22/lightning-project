@@ -81,6 +81,7 @@ def run_bolt(
             sensor_rng,
             sound_speed=float(atm.sound_speed(z_mic)[0]),
             air_density=float(atm.density(z_mic)[0]),
+            wind_at_mics_mps=float(np.linalg.norm(atm.wind(z_mic)[0])),
         )
         res.timings_s["sensors"] = time.perf_counter() - t
         res.stages.append("sensors")

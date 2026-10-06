@@ -158,5 +158,3 @@ class TreeBuilder:
             stroke_times=stroke_times,
             metadata=metadata,
         )
-
-

@@ -37,7 +37,7 @@ from scipy import optimize
 
 from thunder.config import ReconstructionConfig
 from thunder.recon.preprocess import active_frames, bandpass, frame, whiten, window_energy
-from thunder.types import FloatArray, Reconstruction, Recording
+from thunder.types import Atmosphere, FloatArray, Reconstruction, Recording
 
 # --- GCC-PHAT -------------------------------------------------------------------
 
@@ -172,6 +172,7 @@ class DirectionFit:
     planar: bool  # True if the vertical slowness was unobservable (hard case)
     residual_rms: float  # s
     cov_u: FloatArray  # (3, 3) first-order covariance of u
+    p_free: FloatArray  # (3,) unconstrained least-squares slowness (z = 0 if unobservable)
 
 
 def solve_direction(
@@ -234,20 +235,28 @@ def solve_direction(
     hn = diffs.T @ (diffs * wn[:, None])
     tb = np.linalg.svd(np.eye(3) - np.outer(u, u))[0][:, :2]
     cov_u = c**2 * sigma2 * tb @ np.linalg.pinv(tb.T @ hn @ tb) @ tb.T
-    return DirectionFit(u, free_ratio, planar, float(np.sqrt(np.mean(resid**2))), cov_u)
+    return DirectionFit(u, free_ratio, planar, float(np.sqrt(np.mean(resid**2))), cov_u, p_free)
 
 
 # --- Method A -----------------------------------------------------------------------
 
 
 def reconstruct_plane_wave(
-    rec: Recording, mic_positions: FloatArray, sound_speed: float, cfg: ReconstructionConfig
+    rec: Recording, mic_positions: FloatArray, atmosphere: Atmosphere, cfg: ReconstructionConfig
 ) -> Reconstruction:
-    """Method A on a recording. Uses only the signals, nominal positions, reported t0 and c."""
+    """Method A on a recording. Uses only the signals, nominal positions, reported t0 and the
+    *assumed* atmosphere.
+
+    Uniform assumed atmosphere: straight rays (point = centroid + R u). Otherwise the
+    measured horizontal slowness, which is conserved along a ray in a stratified medium and
+    is exactly what the TDOAs across the array measure, is traced back up through the
+    assumed atmosphere from the reference mic for the measured travel time (`locate`).
+    """
     fs = rec.sample_rate
     mics = np.asarray(mic_positions, dtype=float)
     m = len(mics)
-    c = float(sound_speed)
+    z_mics = np.array([float(np.mean(mics[:, 2]))])
+    c = float(atmosphere.sound_speed(z_mics)[0])
     x = bandpass(rec.signals, fs, cfg.band_hz, cfg.filter_order)
     if cfg.whiten:
         x = whiten(x, fs, cfg.band_hz)
@@ -312,7 +321,7 @@ def reconstruct_plane_wave(
         passed = (
             mean_peak >= cfg.min_peak and fit.residual_rms <= cfg.max_residual_s and ok_ratio and r_cen > 0
         )
-        rows.append((point, cov, t_c, mean_peak, fit.residual_rms, fit.free_ratio, passed))
+        rows.append((point, cov, t_c, mean_peak, fit.residual_rms, fit.free_ratio, passed, fit, spread))
 
     if not rows:
         return Reconstruction.empty("A", cfg.config_hash())
@@ -323,6 +332,20 @@ def reconstruct_plane_wave(
     resid = np.array([r[4] for r in rows])
     ratio = np.array([r[5] for r in rows])
     keep = np.array([r[6] for r in rows])
+    if not atmosphere.is_uniform:
+        # Refraction-aware: trace each window's horizontal slowness back for its travel time.
+        # p points toward the source (tau_ij = -(m_j - m_i) . p); the wave slowness s along
+        # the direction of travel, which `locate` integrates, is -p.
+        sh = -np.array([r[7].p_free[:2] for r in rows])
+        located, ok = atmosphere.locate(mics[ref], sh, times - rec.reported_t0)
+        for k, row in enumerate(rows):
+            if ok[k]:
+                u = located[k] - mics[ref]
+                rng_k = float(np.linalg.norm(u))
+                u /= rng_k
+                covs[k] = rng_k**2 * row[7].cov_u + (c * row[8]) ** 2 * np.outer(u, u)
+        pts = np.where(ok[:, None], located, np.nan)
+        keep = keep & ok
     return Reconstruction(
         points=pts[keep],
         covariances=covs[keep],

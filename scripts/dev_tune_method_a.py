@@ -51,8 +51,18 @@ def make_bolts(n: int):
         seed = DEV_SEED0 + k
         cfg = ChannelConfig(preset=PRESETS[k % 3], strike_distance_m=(1000.0, 3000.0))
         ch = generate_channel(cfg, np.random.default_rng(seed), seed=seed)
-        rec = synthesize(ch, ATM, ARRAY, 8000.0, 8, 0.5, ACOUSTIC_EFFICIENCY, np.random.default_rng(seed + 1),
-                         np.radians(16.0), 1.0)
+        rec = synthesize(
+            ch,
+            ATM,
+            ARRAY,
+            8000.0,
+            8,
+            0.5,
+            ACOUSTIC_EFFICIENCY,
+            np.random.default_rng(seed + 1),
+            np.radians(16.0),
+            1.0,
+        )
         bolts.append((ch, rec))
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     CACHE.write_bytes(pickle.dumps(bolts))

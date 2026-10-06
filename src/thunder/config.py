@@ -121,18 +121,82 @@ class ChannelConfig(StrictModel):
         return (math.radians(self.branch_angle_deg[0]), math.radians(self.branch_angle_deg[1]))
 
 
-class AtmosphereConfig(StrictModel):
-    """Atmosphere used for synthesis. Phase 2: uniform still air. Phase 3 adds profiles and wind."""
+class InversionConfig(StrictModel):
+    """Temperature rising by delta_k linearly over [base_m, top_m] (added to the lapse profile)."""
 
-    model: Literal["uniform"] = "uniform"
-    temperature_c: float = 25.0  # SPEC.md Phase 3 default surface temperature
+    base_m: float = Field(ge=0)
+    top_m: float
+    delta_k: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> InversionConfig:
+        if self.top_m <= self.base_m:
+            raise ValueError("inversion top_m must exceed base_m")
+        return self
+
+
+class WindConfig(StrictModel):
+    """Horizontal wind u(z) = speed ((z + z0) / (z_ref + z0))^exponent, from direction(z)."""
+
+    speed_mps: float = Field(default=5.0, ge=0)  # at reference_height_m
+    reference_height_m: float = Field(default=C.WIND_REFERENCE_HEIGHT_M, gt=0)
+    exponent: float = Field(default=C.WIND_POWER_EXPONENT, ge=0, le=1)
+    height_offset_m: float = Field(default=C.WIND_HEIGHT_OFFSET_M, gt=0)
+    # Meteorological convention: the direction the wind blows FROM, clockwise from north.
+    direction_from_deg: float = 270.0
+    shear_deg_per_km: float = 0.0  # direction veers (+) / backs (-) with height
+
+
+class RayConfig(StrictModel):
+    """Numerics of the stratified-atmosphere eigenray solver (see atmosphere/raytrace.py)."""
+
+    max_height_m: float = Field(default=12000.0, gt=0)  # profiles are tabulated up to here
+    # Largest layer of the graded height grid (5 cm at the ground, +15% per layer). 20 m keeps
+    # travel times within ~0.3 us (still air) / ~7 us median (wind) of a 0.5 m reference.
+    integration_step_m: float = Field(default=20.0, gt=0)
+    tolerance_m: float = Field(default=1e-4, gt=0)  # eigenray landing tolerance
+    max_iterations: int = Field(default=40, ge=5)
+
+
+class AtmosphereConfig(StrictModel):
+    """Atmosphere (SPEC.md Phase 3). Each physical effect is a separate toggle.
+
+    uniform:    constant temperature, pressure, humidity and sound speed; straight rays.
+    stratified: lapse-rate temperature (optional inversion), hydrostatic pressure, constant
+                relative humidity, optional power-law wind; rays traced through the profile.
+    Sound speed includes the humidity correction in both models.
+    """
+
+    model: Literal["uniform", "stratified"] = "uniform"
+    temperature_c: float = 25.0  # at the ground (SPEC.md Phase 3 default)
+    lapse_rate_k_per_km: float = Field(default=1000 * C.LAPSE_RATE_STANDARD)  # stratified only
+    inversion: InversionConfig | None = None  # stratified only
     relative_humidity: float = Field(default=0.5, ge=0, le=1)
-    pressure_pa: float = Field(default=C.P_STANDARD, gt=0)
+    pressure_pa: float = Field(default=C.P_STANDARD, gt=0)  # at the ground
+    wind: WindConfig | None = None  # stratified only
+    absorption: bool = False  # ISO 9613-1
+    ground_reflection: bool = False  # image path off a rigid ground
+    reflection_coefficient: float = Field(default=1.0, ge=-1, le=1)
+    rays: RayConfig = Field(default_factory=RayConfig)
+
+    @model_validator(mode="after")
+    def _uniform_has_no_profiles(self) -> AtmosphereConfig:
+        if self.model == "uniform" and (self.wind is not None or self.inversion is not None):
+            raise ValueError("wind and inversion need model: stratified")
+        return self
 
 
 ArrayLayout = Literal[
-    "triangle", "square", "square_center", "circle", "l_shape", "cross",
-    "mast", "random_disk", "distributed", "free_form",
+    "triangle",
+    "square",
+    "square_center",
+    "circle",
+    "l_shape",
+    "cross",
+    "mast",
+    "random_disk",
+    "distributed",
+    "free_form",
 ]
 
 
@@ -176,18 +240,33 @@ MIC_PRESETS: dict[str, dict[str, Any]] = {
     "ideal": {},
     # Measurement / infrasound-capable condenser mic with 24-bit recorder.
     "measurement": {
-        "highpass_hz": 2.0, "lowpass_hz": 2000.0, "gain_tolerance_db": 0.2, "corner_tolerance": 0.02,
-        "self_noise_db_spl": 20.0, "clip_db_spl": 140.0, "adc_bits": 24,
+        "highpass_hz": 2.0,
+        "lowpass_hz": 2000.0,
+        "gain_tolerance_db": 0.2,
+        "corner_tolerance": 0.02,
+        "self_noise_db_spl": 20.0,
+        "clip_db_spl": 140.0,
+        "adc_bits": 24,
     },
     # Ordinary audio condenser/dynamic mic with 24-bit recorder.
     "audio": {
-        "highpass_hz": 20.0, "lowpass_hz": 20000.0, "gain_tolerance_db": 1.0, "corner_tolerance": 0.10,
-        "self_noise_db_spl": 15.0, "clip_db_spl": 130.0, "adc_bits": 24,
+        "highpass_hz": 20.0,
+        "lowpass_hz": 20000.0,
+        "gain_tolerance_db": 1.0,
+        "corner_tolerance": 0.10,
+        "self_noise_db_spl": 15.0,
+        "clip_db_spl": 130.0,
+        "adc_bits": 24,
     },
     # Smartphone MEMS mic: ~100 Hz high-pass in the audio path, ~120 dB SPL overload, 16-bit.
     "phone": {
-        "highpass_hz": 100.0, "lowpass_hz": None, "gain_tolerance_db": 2.0, "corner_tolerance": 0.20,
-        "self_noise_db_spl": 32.0, "clip_db_spl": 120.0, "adc_bits": 16,
+        "highpass_hz": 100.0,
+        "lowpass_hz": None,
+        "gain_tolerance_db": 2.0,
+        "corner_tolerance": 0.20,
+        "self_noise_db_spl": 32.0,
+        "clip_db_spl": 120.0,
+        "adc_bits": 16,
     },
 }
 
@@ -302,6 +381,8 @@ class NoiseConfig(StrictModel):
     background_field: Literal["diffuse", "incoherent"] = "diffuse"
     snr_band_hz: tuple[float, float] = (10.0, 300.0)  # SPEC.md default analysis band
     wind_speed_mps: float = Field(default=0.0, ge=0)  # at mic height; 0 = no wind noise
+    # Take the wind-noise speed from the atmosphere's wind at mic height (overrides wind_speed_mps).
+    wind_from_atmosphere: bool = False
     rain_db_spl: float | None = None  # broadband rain-impact noise level; None = no rain
 
     @field_validator("snr_band_hz")

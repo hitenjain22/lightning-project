@@ -47,8 +47,15 @@ def generate_channel(cfg: ChannelConfig, rng: np.random.Generator, seed: int | N
 
     n_max = int(math.ceil(20 * height / step))
     walk = random_walk(
-        start, unit(target - start), n_max, step, turn_dist, cfg.bias_strength,
-        lambda p, d: unit(target - p) if np.linalg.norm(target - p) > 0 else DOWN, rng, land=True,
+        start,
+        unit(target - start),
+        n_max,
+        step,
+        turn_dist,
+        cfg.bias_strength,
+        lambda p, d: unit(target - p) if np.linalg.norm(target - p) > 0 else DOWN,
+        rng,
+        land=True,
     )
     if not walk.landed:
         raise RuntimeError("main channel did not reach the ground; increase bias_strength")
@@ -64,8 +71,15 @@ def generate_channel(cfg: ChannelConfig, rng: np.random.Generator, seed: int | N
         heading = rng.uniform(-math.pi, math.pi)
         d0 = np.array([math.cos(heading), math.sin(heading), 0.0])
         ic = random_walk(
-            main[0], d0, max(1, round(length / step)), step, turn_dist, cfg.bias_strength,
-            _incloud_goal(d0, main[0, 2]), rng, floor=step,
+            main[0],
+            d0,
+            max(1, round(length / step)),
+            step,
+            turn_dist,
+            cfg.bias_strength,
+            _incloud_goal(d0, main[0, 2]),
+            rng,
+            floor=step,
         )
         tree.add_path(ic.nodes, 0, cfg.energy_per_length_main, incloud=True)
 

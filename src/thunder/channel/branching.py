@@ -51,12 +51,17 @@ def grow_branches(
         length = median * math.exp(cfg.branch_length_sigma * rng.standard_normal())
         n_steps = max(1, round(length / step))
         walk = random_walk(
-            pos, d0, n_steps, step, turn_dist, cfg.branch_bias_strength,
-            _fixed_goal(d0), rng, floor=step,
+            pos,
+            d0,
+            n_steps,
+            step,
+            turn_dist,
+            cfg.branch_bias_strength,
+            _fixed_goal(d0),
+            rng,
+            floor=step,
         )
         if len(walk.nodes) < 2:
             continue
         idxs = tree.add_path(walk.nodes, site, branch_energy)
         grow_branches(tree, idxs, depth + 1, branch_energy, cfg, turn_dist, rng)
-
-

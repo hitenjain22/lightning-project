@@ -7,6 +7,7 @@ Shapes: N nodes, S segments, M mics, K reconstructed points.
 from __future__ import annotations
 
 import abc
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,6 +17,7 @@ from numpy.typing import NDArray
 from thunder.constants import R_DRY_AIR
 
 FloatArray = NDArray[np.float64]
+FloatLike = float | FloatArray  # functions that accept a scalar or an array
 IntArray = NDArray[np.int64]
 BoolArray = NDArray[np.bool_]
 
@@ -68,15 +70,35 @@ class Channel:
 
 @dataclass(frozen=True)
 class ArrivalPath:
-    """Result of propagating from a source to a receiver."""
+    """One propagation path (direct or ground-reflected) from sources to a receiver.
 
-    travel_time: FloatArray  # (...,) s
-    arrival_direction: FloatArray  # (..., 3) unit vector of propagation at the receiver
-    amplitude_factor: FloatArray  # (...,) geometric spreading factor (1/r in uniform air)
+    Invalid entries (no ray reaches the receiver: acoustic shadow) have travel_time = NaN and
+    amplitude_factor = 0.
+    """
+
+    travel_time: FloatArray  # (K,) s
+    arrival_direction: FloatArray  # (K, 3) unit wave normal (direction of travel) at the receiver
+    amplitude_factor: FloatArray  # (K,) spreading factor (exactly 1/R in uniform still air)
+    source_slowness: FloatArray  # (K, 3) slowness vector at the source; grad_source(T) = -source_slowness
+    path_length: FloatArray  # (K,) straight-line length of the path (for absorption), m
+
+    @property
+    def valid(self) -> np.ndarray:
+        return np.isfinite(self.travel_time)
 
 
 class Atmosphere(abc.ABC):
-    """Horizontally stratified atmosphere. Profiles are functions of height z (m)."""
+    """Horizontally stratified atmosphere. Profiles are functions of height z (m).
+
+    Propagation methods take sources (K, 3) and one receiver (3,). Effects are toggles:
+    `ground_reflection` adds an image path off a ground with `reflection_coefficient`, and
+    `absorption` enables ISO 9613-1 attenuation in `attenuation_db`.
+    """
+
+    absorption: bool = False
+    ground_reflection: bool = False
+    reflection_coefficient: float = 1.0
+    is_uniform: bool = False
 
     @abc.abstractmethod
     def temperature(self, z: FloatArray) -> FloatArray:
@@ -103,12 +125,63 @@ class Atmosphere(abc.ABC):
         return self.pressure(z) / (R_DRY_AIR * self.temperature(z))
 
     @abc.abstractmethod
-    def propagate(self, sources: FloatArray, receivers: FloatArray) -> ArrivalPath:
-        """Travel time, arrival direction and spreading between broadcastable point sets (..., 3)."""
+    def propagate(
+        self, sources: FloatArray, receiver: FloatArray, guess: ArrivalPath | None = None
+    ) -> ArrivalPath:
+        """Direct path from each source to the receiver. `guess`: the same sources' paths to a
+        nearby receiver, which an iterative solver may use as a starting point."""
+
+    @abc.abstractmethod
+    def propagate_reflected(
+        self, sources: FloatArray, receiver: FloatArray, guess: ArrivalPath | None = None
+    ) -> ArrivalPath:
+        """Path reflected once off the ground (z = 0), without the reflection coefficient."""
+
+    def paths(self, sources: FloatArray, receiver: FloatArray) -> list[ArrivalPath]:
+        """All modeled paths: direct, plus the ground reflection (scaled by its coefficient) if enabled."""
+        out = [self.propagate(sources, receiver)]
+        if self.ground_reflection:
+            r = self.propagate_reflected(sources, receiver)
+            out.append(
+                dataclasses.replace(r, amplitude_factor=r.amplitude_factor * self.reflection_coefficient)
+            )
+        return out
+
+    @abc.abstractmethod
+    def locate(
+        self, receiver: FloatArray, slowness_h: FloatArray, travel_time: FloatArray
+    ) -> tuple[FloatArray, np.ndarray]:
+        """Source positions (K, 3) on the direct rays reaching `receiver` with horizontal slowness
+        `slowness_h` (K, 2) after `travel_time` (K,) s, and a validity mask (inverse of propagate)."""
+
+    def attenuation_db(
+        self,
+        freqs: FloatArray,
+        z_source: FloatArray,
+        z_receiver: float,
+        path_length: FloatArray,
+        reflected: bool = False,
+    ) -> FloatArray:
+        """Absorption (dB) at each frequency for each path, (K, F); zeros if absorption is off.
+
+        The ISO 9613-1 coefficient is averaged over the heights the path spans (straight-path
+        approximation: the path length times the height-mean coefficient).
+        """
+        from thunder.atmosphere.absorption import path_absorption_db
+
+        z_source = np.atleast_1d(np.asarray(z_source, dtype=float))
+        f = np.atleast_1d(np.asarray(freqs, dtype=float))
+        if not self.absorption:
+            return np.zeros((len(z_source), len(f)))
+        return path_absorption_db(
+            self, f, z_source, float(z_receiver), np.asarray(path_length, dtype=float), reflected
+        )
 
 
 class UniformAtmosphere(Atmosphere):
-    """Still air with constant sound speed, temperature and pressure; straight-line propagation."""
+    """Still air with constant sound speed, temperature, pressure and humidity; straight rays."""
+
+    is_uniform = True
 
     def __init__(
         self,
@@ -116,11 +189,17 @@ class UniformAtmosphere(Atmosphere):
         temperature: float,
         relative_humidity: float = 0.5,
         pressure: float = 101_325.0,
+        absorption: bool = False,
+        ground_reflection: bool = False,
+        reflection_coefficient: float = 1.0,
     ):
         self.c = float(sound_speed)
         self.t = float(temperature)
         self.rh = float(relative_humidity)
         self.p = float(pressure)
+        self.absorption = absorption
+        self.ground_reflection = ground_reflection
+        self.reflection_coefficient = float(reflection_coefficient)
 
     def temperature(self, z: FloatArray) -> FloatArray:
         return np.full_like(np.asarray(z, dtype=float), self.t)
@@ -137,13 +216,40 @@ class UniformAtmosphere(Atmosphere):
     def sound_speed(self, z: FloatArray) -> FloatArray:
         return np.full_like(np.asarray(z, dtype=float), self.c)
 
-    def propagate(self, sources: FloatArray, receivers: FloatArray) -> ArrivalPath:
-        d = np.asarray(receivers, dtype=float) - np.asarray(sources, dtype=float)
+    def _straight(self, sources: FloatArray, receiver: FloatArray, mirror: bool) -> ArrivalPath:
+        src = np.atleast_2d(np.asarray(sources, dtype=float))
+        if mirror:  # image source below the ground
+            src = src * np.array([1.0, 1.0, -1.0])
+        d = np.asarray(receiver, dtype=float) - src
         r = np.linalg.norm(d, axis=-1)
         with np.errstate(divide="ignore", invalid="ignore"):
             direction = d / r[..., None]
             amp = 1.0 / r
-        return ArrivalPath(travel_time=r / self.c, arrival_direction=direction, amplitude_factor=amp)
+        slow = direction / self.c
+        if mirror:  # slowness of the ray as it leaves the real source (heading down)
+            slow = slow * np.array([1.0, 1.0, -1.0])
+        return ArrivalPath(r / self.c, direction, amp, slow, r)
+
+    def propagate(
+        self, sources: FloatArray, receiver: FloatArray, guess: ArrivalPath | None = None
+    ) -> ArrivalPath:
+        return self._straight(sources, receiver, mirror=False)
+
+    def propagate_reflected(
+        self, sources: FloatArray, receiver: FloatArray, guess: ArrivalPath | None = None
+    ) -> ArrivalPath:
+        return self._straight(sources, receiver, mirror=True)
+
+    def locate(
+        self, receiver: FloatArray, slowness_h: FloatArray, travel_time: FloatArray
+    ) -> tuple[FloatArray, np.ndarray]:
+        sh = np.atleast_2d(np.asarray(slowness_h, dtype=float))
+        horiz = self.c * sh
+        h2 = np.sum(horiz**2, axis=1)
+        valid = h2 <= 1.0
+        u = np.column_stack([horiz, np.sqrt(np.clip(1.0 - h2, 0.0, None))])
+        pos = np.asarray(receiver, dtype=float) + (self.c * np.asarray(travel_time, dtype=float))[:, None] * u
+        return pos, valid & (np.asarray(travel_time) > 0)
 
 
 @dataclass(frozen=True)

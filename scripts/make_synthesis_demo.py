@@ -57,9 +57,18 @@ def main() -> None:
         ch_cfg = cfg.channel.model_copy(update={"strike_distance_m": (d, d)})
         ch = generate_channel(ch_cfg, np.random.default_rng(cfg.seed), seed=cfg.seed)
         syn = cfg.synthesis
-        rec = synthesize(ch, atm, np.array(cfg.array.positions_m[:1]), fs, cfg.oversample,
-                         syn.emitter_spacing_m, syn.acoustic_efficiency, np.random.default_rng(cfg.seed),
-                         syn.micro_turn_mean, syn.micro_scale_m)
+        rec = synthesize(
+            ch,
+            atm,
+            np.array(cfg.array.positions_m[:1]),
+            fs,
+            cfg.oversample,
+            syn.emitter_spacing_m,
+            syn.acoustic_efficiency,
+            np.random.default_rng(cfg.seed),
+            syn.micro_turn_mean,
+            syn.micro_scale_m,
+        )
         write_wavs(rec, run_dir / "audio_by_distance" / f"{int(d)}m")
         levels[f"{int(d)}m"] = {"peak_pa": float(np.abs(rec.signals).max()), "duration_s": rec.duration}
         plot_channel_projection(ax, ch, horizontal="range")

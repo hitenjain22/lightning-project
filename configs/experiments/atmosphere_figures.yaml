@@ -1,0 +1,9 @@
+# M5 deliverable: ray fans for still air, a standard lapse rate and strong wind, plus maps of
+# the travel-time and direction errors that straight rays make in a realistic atmosphere.
+experiment: atmosphere_figures
+seed: 0
+description: Ray fans and straight-line error maps (scripts/make_atmosphere_figures.py).
+
+atmosphere:
+  model: stratified
+  temperature_c: 25.0

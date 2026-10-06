@@ -28,8 +28,7 @@ def reconstruct(
     """Reconstruct the channel, then remove outliers, build its skeleton and estimate the strike point."""
     mics = np.asarray(array_nominal, dtype=float)
     if config.method == "A":
-        z = np.array([float(np.mean(mics[:, 2]))])
-        raw = reconstruct_plane_wave(recording, mics, float(atmosphere_assumed.sound_speed(z)[0]), config)
+        raw = reconstruct_plane_wave(recording, mics, atmosphere_assumed, config)
     else:  # pragma: no cover - guarded by the config Literal
         raise ValueError(f"unknown method {config.method!r}")
 

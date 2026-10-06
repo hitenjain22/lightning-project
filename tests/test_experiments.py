@@ -15,7 +15,8 @@ def small_mc_config(tmp_path, workers: int) -> RunConfig:
             "experiment": "mc_test",
             "seed": 7,
             "results_root": str(tmp_path),
-            "channel": {"strike_distance_m": [1500.0, 2500.0]},
+            # short channels keep the test fast; the logic is the same at any size
+            "channel": {"strike_distance_m": [1200.0, 1800.0], "start_height_m": [2000.0, 2500.0]},
             "array": {"layout": "square_center", "aperture_m": 50.0},
             "synthesis": {"write_wav": False},
             "reconstruction": {"method": "A"},
@@ -53,7 +54,7 @@ def test_channel_overrides_exclude_preset_defaults():
 def test_monte_carlo_run_folder_presets_and_report(tmp_path):
     run_dir = run_experiment(small_mc_config(tmp_path, 2))
     t = pd.read_csv(run_dir / "bolts.csv").set_index("preset")
-    assert t["strike_distance_m"].between(1500.0, 2500.0).all()  # explicit field kept for every preset
+    assert t["strike_distance_m"].between(1200.0, 1800.0).all()  # explicit field kept for every preset
     assert t.loc["with_incloud", "incloud_length_m"] >= 2000.0  # each preset's own fields applied
     assert t.loc["tortuous", "incloud_length_m"] == 0.0 and t.loc["tortuous", "branch_count"] == 0
     for name in ("bolts.csv", "points.csv.gz", "examples.pkl", "metrics.json", "config.resolved.yaml"):

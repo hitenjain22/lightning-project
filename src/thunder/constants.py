@@ -36,6 +36,49 @@ SOUND_SPEED_COEFF = math.sqrt(GAMMA_AIR * R_DRY_AIR)
 # ISO 2533 / U.S. Standard Atmosphere 1976, layer 0-11 km.
 LAPSE_RATE_STANDARD = 0.0065
 
+# Standard acceleration of gravity, m/s^2. Exact by definition (CGPM 1901, ISO 80000-3).
+G_STANDARD = 9.80665
+
+# Ratio of molar masses of water vapor and dry air (epsilon = M_w / M_d), dimensionless.
+# Standard meteorological value 0.622 (e.g. Wallace & Hobbs, Atmospheric Science, 2006).
+EPSILON_WATER = 0.622
+
+# Sonic (acoustic virtual) temperature coefficient: c^2 = gamma_d R_d T (1 + 0.51 q), q the
+# specific humidity. Kaimal & Gaynor (1991), Boundary-Layer Meteorology 56, 401-410.
+SONIC_HUMIDITY_COEFF = 0.51
+
+# Magnus formula for saturation vapor pressure over water, e_s = A exp(B t / (t + C)), t in
+# deg C, e_s in Pa. Alduchov & Eskridge (1996), J. Appl. Meteor. 35, 601-609.
+MAGNUS_A_PA = 610.94
+# Magnus B coefficient (dimensionless). Alduchov & Eskridge (1996).
+MAGNUS_B = 17.625
+# Magnus C coefficient, deg C. Alduchov & Eskridge (1996).
+MAGNUS_C_DEGC = 243.04
+
+# Top of the troposphere for the lapse-rate profile, m (temperature constant above).
+# ISO 2533 / U.S. Standard Atmosphere 1976 (layer 0: 0-11 km).
+TROPOPAUSE_M = 11000.0
+
+# --- Atmospheric absorption, ISO 9613-1:1993 ----------------------------------
+
+# Reference temperature 20 deg C, K. ISO 9613-1 (T0).
+ISO_T0_K = 293.15
+# Triple-point isotherm temperature, K. ISO 9613-1 (T01).
+ISO_T01_K = 273.16
+# Reference ambient pressure, Pa. ISO 9613-1 (p_r = 101.325 kPa).
+ISO_PR_PA = 101_325.0
+
+# --- Wind profile defaults ----------------------------------------------------
+
+# Power-law exponent of the wind profile for neutral stability over open terrain (1/7 law).
+# Classic engineering value (e.g. Peterson & Hennessey 1978, J. Appl. Meteor. 17).  # VERIFY
+WIND_POWER_EXPONENT = 1.0 / 7.0
+# Reference height of the wind speed, m. WMO standard anemometer height.
+WIND_REFERENCE_HEIGHT_M = 10.0
+# Height offset in the power law u = u_ref ((z + z0) / (z_ref + z0))^alpha, m: keeps du/dz
+# finite at the ground; of the order of an open-terrain roughness length.  # VERIFY
+WIND_HEIGHT_OFFSET_M = 0.1
+
 # --- Lightning / thunder (literature values, unverified) ---------------------
 
 # Mean absolute direction change between successive channel segments of tens of meters, rad.

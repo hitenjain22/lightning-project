@@ -40,8 +40,9 @@ def spherical_j1(x: FloatArray) -> FloatArray:
 @cache
 def nwave_peak_x() -> float:
     """Location x* of the maximum of j1 (the N-wave spectral peak is at w T / 2 = x*)."""
-    res = optimize.minimize_scalar(lambda x: -spherical_j1(x), bounds=(1.0, 3.0), method="bounded",
-                                   options={"xatol": 1e-12})
+    res = optimize.minimize_scalar(
+        lambda x: -spherical_j1(x), bounds=(1.0, 3.0), method="bounded", options={"xatol": 1e-12}
+    )
     return float(res.x)
 
 

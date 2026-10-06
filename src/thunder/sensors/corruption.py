@@ -49,12 +49,15 @@ PREROLL_S = 2.0  # noise generated before the recording so filters start in stea
 
 
 def active_window(rec: Recording) -> slice:
-    """Sample range from the first to the last thunder arrival (from ground truth)."""
+    """Sample range from the first to the last thunder arrival (from ground truth; segments in
+    the acoustic shadow, with NaN arrival times, are ignored)."""
     assert rec.truth is not None
     ex = rec.truth.extra
     times = ex.get("segment_arrival_times_recorder", rec.truth.segment_arrival_times)
-    t_lo = float(np.min(times))
-    t_hi = float(np.max(times)) + float(np.max(ex["stroke_times"]))
+    if not np.any(np.isfinite(times)):
+        return slice(0, rec.signals.shape[1])
+    t_lo = float(np.nanmin(times))
+    t_hi = float(np.nanmax(times)) + float(np.max(ex["stroke_times"]))
     t_hi += float(np.max(ex["segment_pulse_duration"]))
     n = rec.signals.shape[1]
     lo = max(0, int(np.floor(t_lo * rec.sample_rate)))
@@ -68,11 +71,13 @@ def mic_filter_sos(cfg: SensorsConfig, fs: float, corner_scale: float) -> np.nda
     nyq_limit = 0.45 * fs
     sections = []
     if mic.highpass_hz is not None:
-        sections.append(signal.butter(mic.filter_order, mic.highpass_hz * corner_scale, "highpass", fs=fs,
-                                      output="sos"))
+        sections.append(
+            signal.butter(mic.filter_order, mic.highpass_hz * corner_scale, "highpass", fs=fs, output="sos")
+        )
     if mic.lowpass_hz is not None and mic.lowpass_hz * corner_scale < nyq_limit:
-        sections.append(signal.butter(mic.filter_order, mic.lowpass_hz * corner_scale, "lowpass", fs=fs,
-                                      output="sos"))
+        sections.append(
+            signal.butter(mic.filter_order, mic.lowpass_hz * corner_scale, "lowpass", fs=fs, output="sos")
+        )
     return np.vstack(sections) if sections else None
 
 
@@ -108,6 +113,7 @@ def corrupt(
     rng: np.random.Generator,
     sound_speed: float = 343.0,
     air_density: float = 1.2,
+    wind_at_mics_mps: float = 0.0,
 ) -> Recording:
     """Apply sensor noise, response, jitter, clipping, quantization and t0 error.
 
@@ -126,7 +132,8 @@ def corrupt(
 
     filters = [mic_filter_sos(cfg, fs, float(s)) for s in np.asarray(array.corner_scale)]
     any_filter = any(f is not None for f in filters)
-    any_noise = nz.background_snr_db is not None or nz.wind_speed_mps > 0 or nz.rain_db_spl is not None
+    wind_speed = wind_at_mics_mps if nz.wind_from_atmosphere else nz.wind_speed_mps
+    any_noise = nz.background_snr_db is not None or wind_speed > 0 or nz.rain_db_spl is not None
     pre = int(round(PREROLL_S * fs)) if (any_filter and any_noise) else 0
     x = clean.signals
     if any_noise or pre:
@@ -146,10 +153,11 @@ def corrupt(
         x = x + bg
         info["background_power_band_pa2"] = p_sig / 10 ** (nz.background_snr_db / 10)
         info["signal_power_band_pa2"] = p_sig
-    if nz.wind_speed_mps > 0:
-        p_rms = wind_rms(nz.wind_speed_mps, air_density)
-        psd = scaled_psd(wind_psd_shape(f, nz.wind_speed_mps), p_rms, fs)
-        x = x + generate_field(psd, m, total, fs, wind_rng, wind_coherence(positions, nz.wind_speed_mps))
+    if wind_speed > 0:
+        p_rms = wind_rms(wind_speed, air_density)
+        psd = scaled_psd(wind_psd_shape(f, wind_speed), p_rms, fs)
+        x = x + generate_field(psd, m, total, fs, wind_rng, wind_coherence(positions, wind_speed))
+        info["wind_speed_mps"] = wind_speed
         info["wind_rms_pa"] = p_rms
     if nz.rain_db_spl is not None:
         x = x + rain_noise(m, total, fs, db_spl_to_pa(nz.rain_db_spl), rain_rng)
@@ -157,8 +165,12 @@ def corrupt(
 
     # 2. Microphone response and sensitivity.
     if any_filter:
-        x = np.stack([signal.sosfilt(sos, row) if sos is not None else row for sos, row in zip(filters, x,
-                                                                                               strict=True)])
+        x = np.stack(
+            [
+                signal.sosfilt(sos, row) if sos is not None else row
+                for sos, row in zip(filters, x, strict=True)
+            ]
+        )
     x = x[:, pre:] if (any_noise or pre) else x
     gain_db = np.asarray(array.gain_db)
     if np.any(gain_db != 0):
