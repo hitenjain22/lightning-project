@@ -421,7 +421,7 @@ class SynthesisConfig(StrictModel):
 class ReconstructionConfig(StrictModel):
     """Phase 5 reconstruction. Defaults were tuned on development seeds disjoint from E1."""
 
-    method: Literal["A"] = "A"
+    method: Literal["A", "B", "C"] = "A"  # plane-wave TDOA / steered response power / multilateration
     # Assumed atmosphere. None = the synthesis atmosphere (an *oracle* run; labeled as such).
     atmosphere: AtmosphereConfig | None = None
     # Preprocessing
@@ -444,6 +444,25 @@ class ReconstructionConfig(StrictModel):
     min_peak: float = Field(default=0.3, ge=0, le=1)  # mean GCC-PHAT peak (non-binding when noise-free)
     max_residual_s: float = Field(default=2e-3, gt=0)  # RMS TDOA least-squares residual
     slowness_tolerance: float = Field(default=0.15, gt=0)  # allowed |c * p_unconstrained| - 1
+    # Method B (SRP-PHAT): steering grid over u = c s_h (dimensionless), peak picking
+    srp_slowness_step: float = Field(default=0.02, gt=0, le=0.2)
+    max_sources: int = Field(default=3, ge=1, le=10)  # per window
+    srp_min_power: float = Field(default=0.1, ge=0, le=1)  # SRP power (pass-1 windows) to keep a peak
+    srp_relative_peak: float = Field(default=0.5, gt=0, le=1)  # vs the window's strongest peak
+    srp_min_separation: float = Field(default=0.06, gt=0)  # in u units (~3.4 deg near horizontal)
+    srp_duplicate_deg: float = Field(default=2.0, gt=0)  # refined directions closer than this merge
+    refine_search_s: float = Field(default=0.002, gt=0)  # TDOA search around each peak's lags
+    # Gates for B detections, tuned on development bolts. False detections (SRP sidelobes,
+    # almost all secondary peaks) have a near-zero peak on some pair (p90 0.43) and a large
+    # fit residual (median 0.5 ms); true ones are coherent on every pair (median 0.99) with
+    # small residuals (median 0.13 ms). Requiring both a minimum pair peak of 0.4 and a residual
+    # <= 0.5 ms gave the best coverage clean and at 25 / 15 dB SNR, and keeps two equally
+    # strong simultaneous sources (each splits the coherence: weakest pair ~0.56-0.65).
+    srp_min_pair_peak: float = Field(default=0.4, ge=0, le=1)
+    srp_max_residual_s: float = Field(default=5e-4, gt=0)  # TDOA fit residual gate for B detections
+    # Method C (multilateration): soft-L1 scale on travel-time residuals and iteration cap
+    multilat_time_scale_s: float = Field(default=1e-3, gt=0)
+    multilat_max_iterations: int = Field(default=20, ge=1)
     # Post-processing
     dbscan_eps_m: float = Field(default=300.0, gt=0)
     dbscan_min_samples: int = Field(default=2, ge=1)

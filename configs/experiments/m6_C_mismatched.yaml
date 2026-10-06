@@ -1,0 +1,36 @@
+# M6 comparison (method C): realistic synthesis atmosphere (6.5 K/km lapse, 5 m/s west wind, ISO absorption,
+# rigid-ground reflection), ideal sensors, Method A; reconstruction assumption: mismatched.
+# The three m5_atmosphere_* configs share the seed, so they reconstruct the same 60 bolts.
+experiment: m6_C_mismatched
+seed: 551
+description: Realistic atmosphere, method C, reconstruction assumes mismatched.
+
+channel:
+  strike_distance_m: [1000.0, 3000.0]
+
+atmosphere:
+  model: stratified
+  temperature_c: 25.0
+  lapse_rate_k_per_km: 6.5
+  relative_humidity: 0.5
+  wind: {speed_mps: 5.0, direction_from_deg: 270.0}
+  absorption: true
+  ground_reflection: true
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+
+synthesis:
+  write_wav: false
+
+reconstruction:
+  method: C
+  atmosphere:               # realistic knowledge (SPEC option c): right surface T, wrong lapse, no wind
+    model: stratified
+    temperature_c: 25.0
+    lapse_rate_k_per_km: 5.0
+
+monte_carlo:
+  n_bolts: 60
+  presets: [tortuous, branched, with_incloud]

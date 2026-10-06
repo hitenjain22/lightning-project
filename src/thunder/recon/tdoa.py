@@ -36,7 +36,7 @@ import numpy as np
 from scipy import optimize
 
 from thunder.config import ReconstructionConfig
-from thunder.recon.preprocess import active_frames, bandpass, frame, whiten, window_energy
+from thunder.recon.preprocess import Frames, active_frames, bandpass, frame, whiten, window_energy
 from thunder.types import Atmosphere, FloatArray, Reconstruction, Recording
 
 # --- GCC-PHAT -------------------------------------------------------------------
@@ -50,7 +50,6 @@ class Correlator:
     n_long_pad: int  # samples added on each side of the long window
     nfft: int
     band_mask: np.ndarray
-    norm: float  # makes a perfect single-source match peak at exactly 1
     short_taper: FloatArray
 
     @classmethod
@@ -59,7 +58,7 @@ class Correlator:
         nfft = int(2 ** math.ceil(math.log2(n_short + n_long)))
         f = np.fft.rfftfreq(nfft, 1.0 / fs)
         mask = (f >= band[0]) & (f <= band[1]) & (f > 0) & (f < fs / 2)
-        return cls(n_short, pad, nfft, mask, nfft / (2.0 * mask.sum()), np.hanning(n_short + 2)[1:-1])
+        return cls(n_short, pad, nfft, mask, np.hanning(n_short + 2)[1:-1])
 
 
 def _segment(x: FloatArray, start: int, length: int) -> FloatArray:
@@ -71,11 +70,17 @@ def _segment(x: FloatArray, start: int, length: int) -> FloatArray:
     return out
 
 
-def _phat_correlation(cross: np.ndarray, mask: np.ndarray, beta: float, nfft: int, norm: float) -> FloatArray:
-    """Inverse FFT of the band-limited, (beta-)PHAT-weighted cross-spectrum."""
+def _phat_correlation(cross: np.ndarray, mask: np.ndarray, beta: float, nfft: int) -> FloatArray:
+    """Inverse FFT of the band-limited, (beta-)PHAT-weighted cross-spectrum, normalized so a
+    perfect match (all weighted bins in phase) peaks at exactly 1 for any beta:
+        r(tau) = sum_k |w_k| cos(phase_k - w_k tau) / sum_k |w_k|,   w_k = G_k / |G_k|^beta.
+    (A fixed constant is only right for beta = 1, where every |w_k| = 1.)"""
     mag = np.abs(cross)
     w = np.where(mask & (mag > 0), cross / np.where(mag > 0, mag, 1.0) ** beta, 0.0)
-    return np.fft.irfft(w, nfft) * norm
+    total = float(np.sum(np.abs(w)))
+    if total <= 0:
+        return np.zeros(nfft)
+    return np.fft.irfft(w, nfft) * (nfft / (2.0 * total))
 
 
 def _parabolic(r: FloatArray, k: int, lo: int, hi: int) -> float:
@@ -104,7 +109,7 @@ def gcc_phat(
     s = _segment(x_short, short_start, n) * corr.short_taper
     lg = _segment(x_long, short_start - pad, n + 2 * pad)
     cross = np.conj(np.fft.rfft(s, corr.nfft)) * np.fft.rfft(lg, corr.nfft)
-    r = _phat_correlation(cross, corr.band_mask, beta, corr.nfft, corr.norm)
+    r = _phat_correlation(cross, corr.band_mask, beta, corr.nfft)
     lo, hi = pad - max_lag, pad + max_lag
     k = lo + int(np.argmax(r[lo : hi + 1]))
     return (k - pad) + _parabolic(r, k, lo, hi), float(r[k])
@@ -117,7 +122,6 @@ class MatchedCorrelator:
     n: int
     nfft: int
     band_mask: np.ndarray
-    norm: float
     taper: FloatArray
     beta: float
 
@@ -126,7 +130,7 @@ class MatchedCorrelator:
         nfft = int(2 ** math.ceil(math.log2(2 * n)))
         f = np.fft.rfftfreq(nfft, 1.0 / fs)
         mask = (f >= band[0]) & (f <= band[1]) & (f > 0) & (f < fs / 2)
-        return cls(n, nfft, mask, nfft / (2.0 * mask.sum()), np.hanning(n + 2)[1:-1], beta)
+        return cls(n, nfft, mask, np.hanning(n + 2)[1:-1], beta)
 
 
 def matched_spectrum(x: FloatArray, start: int, corr: MatchedCorrelator) -> np.ndarray:
@@ -138,7 +142,7 @@ def gcc_phat_spectra(
     a: np.ndarray, b: np.ndarray, lag_lo: int, lag_hi: int, corr: MatchedCorrelator
 ) -> tuple[float, float]:
     """Residual lag (samples) of window b relative to window a, searched in [lag_lo, lag_hi]."""
-    r = _phat_correlation(np.conj(a) * b, corr.band_mask, corr.beta, corr.nfft, corr.norm)
+    r = _phat_correlation(np.conj(a) * b, corr.band_mask, corr.beta, corr.nfft)
     lags = np.arange(lag_lo - 1, lag_hi + 2)  # one extra on each side for the parabola
     vals = r[lags % corr.nfft]  # circular index: negative lags wrap to the end
     k = 1 + int(np.argmax(vals[1:-1]))
@@ -241,126 +245,217 @@ def solve_direction(
 # --- Method A -----------------------------------------------------------------------
 
 
-def reconstruct_plane_wave(
-    rec: Recording, mic_positions: FloatArray, atmosphere: Atmosphere, cfg: ReconstructionConfig
-) -> Reconstruction:
-    """Method A on a recording. Uses only the signals, nominal positions, reported t0 and the
-    *assumed* atmosphere.
+@dataclass
+class Setup:
+    """Everything the TDOA methods share for one recording."""
 
-    Uniform assumed atmosphere: straight rays (point = centroid + R u). Otherwise the
-    measured horizontal slowness, which is conserved along a ray in a stratified medium and
-    is exactly what the TDOAs across the array measure, is traced back up through the
-    assumed atmosphere from the reference mic for the measured travel time (`locate`).
-    """
+    x: FloatArray  # (M, n) band-passed (optionally whitened) signals
+    fs: float
+    mics: FloatArray  # (M, 3) nominal positions
+    c: float  # assumed sound speed at mic height
+    centroid: FloatArray
+    ref: int  # reference mic (nearest the centroid)
+    max_lag: np.ndarray  # (M, M) samples
+    frames: Frames
+    corr: Correlator  # pass 1 (short vs long windows)
+    fine: MatchedCorrelator  # pass 2 (matched windows)
+    residual: int  # pass-2 lag search half-width, samples
+    active: np.ndarray  # active window indices
+    pairs: list[tuple[int, int]]
+    diffs: FloatArray  # (P, 3) m_j - m_i per pair
+    sigma_floor: float
+
+
+def prepare(
+    rec: Recording, mic_positions: FloatArray, atmosphere: Atmosphere, cfg: ReconstructionConfig
+) -> Setup:
     fs = rec.sample_rate
     mics = np.asarray(mic_positions, dtype=float)
     m = len(mics)
-    z_mics = np.array([float(np.mean(mics[:, 2]))])
-    c = float(atmosphere.sound_speed(z_mics)[0])
+    c = float(atmosphere.sound_speed(np.array([float(np.mean(mics[:, 2]))]))[0])
     x = bandpass(rec.signals, fs, cfg.band_hz, cfg.filter_order)
     if cfg.whiten:
         x = whiten(x, fs, cfg.band_hz)
-
     centroid = mics.mean(axis=0)
     ref = int(np.argmin(np.linalg.norm(mics - centroid, axis=1)))
     dist = np.linalg.norm(mics[:, None, :] - mics[None, :, :], axis=2)
     max_lag = np.ceil((dist / c + cfg.lag_margin_s) * fs).astype(int)
     frames = frame(x.shape[1], fs, cfg.window_s, cfg.overlap)
     n = frames.length
-    corr = Correlator.build(n, int(max_lag.max()), fs, cfg.band_hz)
-    fine = MatchedCorrelator.build(n, fs, cfg.band_hz, cfg.phat_beta)
-    residual = max(2, int(round(cfg.residual_search_s * fs)))
-    active = active_frames(window_energy(x, frames), cfg.detection_dynamic_range_db, cfg.detection_snr_db)
     pairs = list(combinations(range(m), 2))
-    diffs = np.array([mics[j] - mics[i] for i, j in pairs])
-    sigma_floor = 1.0 / (fs * math.sqrt(12.0))
-    t = np.arange(n) / fs
+    return Setup(
+        x=x,
+        fs=fs,
+        mics=mics,
+        c=c,
+        centroid=centroid,
+        ref=ref,
+        max_lag=max_lag,
+        frames=frames,
+        corr=Correlator.build(n, int(max_lag.max()), fs, cfg.band_hz),
+        fine=MatchedCorrelator.build(n, fs, cfg.band_hz, cfg.phat_beta),
+        residual=max(2, int(round(cfg.residual_search_s * fs))),
+        active=active_frames(window_energy(x, frames), cfg.detection_dynamic_range_db, cfg.detection_snr_db),
+        pairs=pairs,
+        diffs=np.array([mics[j] - mics[i] for i, j in pairs]).reshape(-1, 3),
+        sigma_floor=1.0 / (fs * math.sqrt(12.0)),
+    )
 
-    rows = []
-    for k in active:
-        start = int(frames.starts[k])
-        # Pass 1: delays from the reference mic.
-        shift = np.zeros(m)
-        for j in range(m):
-            if j != ref:
-                shift[j], _ = gcc_phat(x[ref], x[j], start, int(max_lag[ref, j]), corr, cfg.phat_beta)
-        # Pass 2: equal windows on the same sound at both mics of every pair; residual lag only.
-        offs = np.round(shift).astype(int)
-        spectra = [matched_spectrum(x[i], start + int(offs[i]), fine) for i in range(m)]
-        tau = np.empty(len(pairs))
-        peak = np.empty(len(pairs))
-        for q, (i, j) in enumerate(pairs):
-            base = int(offs[j] - offs[i])
-            lo = max(-residual, -int(max_lag[i, j]) - base)
-            hi = min(residual, int(max_lag[i, j]) - base)
-            if lo > hi:  # pass-1 delays inconsistent with geometry: unusable pair
-                tau[q], peak[q] = base / fs, 0.0
-                continue
-            lag, peak[q] = gcc_phat_spectra(spectra[i], spectra[j], lo, hi, fine)
-            tau[q] = (base + lag) / fs
-        w = np.clip(peak, 1e-3, None)
-        fit = solve_direction(diffs, tau, w, c, sigma_floor)
 
-        seg = x[ref, start : start + n]
-        e = seg**2
-        tot = float(e.sum())
-        if tot <= 0:
+def coarse_shifts(st: Setup, start: int, beta: float) -> FloatArray:
+    """Pass 1: delay (samples) of each mic relative to the reference mic for this window."""
+    shift = np.zeros(len(st.mics))
+    for j in range(len(st.mics)):
+        if j != st.ref:
+            shift[j], _ = gcc_phat(st.x[st.ref], st.x[j], start, int(st.max_lag[st.ref, j]), st.corr, beta)
+    return shift
+
+
+def matched_pairs(st: Setup, start: int, shift: FloatArray, residual: int) -> tuple[FloatArray, FloatArray]:
+    """Pass 2: TDOA tau_ij (s) and normalized peak for every pair, from equal windows placed on the
+    same sound at both mics (offsets = rounded `shift`), searching +-`residual` samples."""
+    offs = np.round(shift).astype(int)
+    spectra = [matched_spectrum(st.x[i], start + int(offs[i]), st.fine) for i in range(len(st.mics))]
+    tau = np.empty(len(st.pairs))
+    peak = np.empty(len(st.pairs))
+    for q, (i, j) in enumerate(st.pairs):
+        base = int(offs[j] - offs[i])
+        lo = max(-residual, -int(st.max_lag[i, j]) - base)
+        hi = min(residual, int(st.max_lag[i, j]) - base)
+        if lo > hi:  # delays inconsistent with geometry: unusable pair
+            tau[q], peak[q] = base / st.fs, 0.0
             continue
-        t_c = start / fs + float((t * e).sum() / tot)
-        spread = float(np.sqrt(max((t**2 * e).sum() / tot - (t_c - start / fs) ** 2, 0.0)))
-        r_ref = c * (t_c - rec.reported_t0)
-        r_cen = r_ref + float(fit.u @ (mics[ref] - centroid))
-        point = centroid + r_cen * fit.u
-        cov = r_cen**2 * fit.cov_u + (c * spread) ** 2 * np.outer(fit.u, fit.u)
-        mean_peak = float(np.mean(peak))
-        ok_ratio = (
-            fit.free_ratio <= 1 + cfg.slowness_tolerance
-            if fit.planar
-            else (abs(fit.free_ratio - 1) <= cfg.slowness_tolerance)
-        )
-        passed = (
-            mean_peak >= cfg.min_peak and fit.residual_rms <= cfg.max_residual_s and ok_ratio and r_cen > 0
-        )
-        rows.append((point, cov, t_c, mean_peak, fit.residual_rms, fit.free_ratio, passed, fit, spread))
+        lag, peak[q] = gcc_phat_spectra(spectra[i], spectra[j], lo, hi, st.fine)
+        tau[q] = (base + lag) / st.fs
+    return tau, peak
 
-    if not rows:
-        return Reconstruction.empty("A", cfg.config_hash())
-    pts = np.array([r[0] for r in rows])
-    covs = np.array([r[1] for r in rows])
-    times = np.array([r[2] for r in rows])
-    peaks = np.array([r[3] for r in rows])
-    resid = np.array([r[4] for r in rows])
-    ratio = np.array([r[5] for r in rows])
-    keep = np.array([r[6] for r in rows])
-    if not atmosphere.is_uniform:
-        # Refraction-aware: trace each window's horizontal slowness back for its travel time.
-        # p points toward the source (tau_ij = -(m_j - m_i) . p); the wave slowness s along
-        # the direction of travel, which `locate` integrates, is -p.
-        sh = -np.array([r[7].p_free[:2] for r in rows])
-        located, ok = atmosphere.locate(mics[ref], sh, times - rec.reported_t0)
-        for k, row in enumerate(rows):
-            if ok[k]:
-                u = located[k] - mics[ref]
-                rng_k = float(np.linalg.norm(u))
-                u /= rng_k
-                covs[k] = rng_k**2 * row[7].cov_u + (c * row[8]) ** 2 * np.outer(u, u)
-        pts = np.where(ok[:, None], located, np.nan)
-        keep = keep & ok
+
+def energy_time(signal_window: FloatArray, start: int, fs: float) -> tuple[float, float] | None:
+    """Energy centroid time (s, recording clock) and RMS spread of a window, or None if silent."""
+    e = signal_window**2
+    tot = float(e.sum())
+    if tot <= 0:
+        return None
+    t = np.arange(len(signal_window)) / fs
+    t_rel = float((t * e).sum() / tot)
+    spread = float(np.sqrt(max((t**2 * e).sum() / tot - t_rel**2, 0.0)))
+    return start / fs + t_rel, spread
+
+
+def slowness_ok(fit: DirectionFit, cfg: ReconstructionConfig) -> bool:
+    if fit.planar:
+        return fit.free_ratio <= 1 + cfg.slowness_tolerance
+    return abs(fit.free_ratio - 1) <= cfg.slowness_tolerance
+
+
+@dataclass
+class WindowFit:
+    """One direction measured in one window (Methods A and B), before placing the point."""
+
+    t_c: float  # arrival time at the reference mic (recording clock)
+    spread: float  # RMS time spread of that arrival within the window
+    fit: DirectionFit
+    tau: FloatArray  # (P,) pair TDOAs
+    peak: FloatArray  # (P,) pair GCC peaks
+    quality: float  # mean pair peak (A) or SRP power (B)
+    passed: bool  # quality, residual and slowness gates
+
+
+def place_points(
+    st: Setup, fits: list[WindowFit], reported_t0: float, atmosphere: Atmosphere
+) -> tuple[FloatArray, FloatArray, np.ndarray]:
+    """Points (K, 3), covariances (K, 3, 3) and validity for measured directions + travel times.
+
+    Uniform assumed atmosphere: straight rays from the centroid (far-field range transfer from
+    the reference mic). Otherwise: trace the measured horizontal slowness back through the
+    assumed atmosphere for the travel time (`Atmosphere.locate`).
+    """
+    k = len(fits)
+    pts = np.full((k, 3), np.nan)
+    covs = np.zeros((k, 3, 3))
+    ok = np.zeros(k, dtype=bool)
+    m_ref = st.mics[st.ref]
+    if atmosphere.is_uniform:
+        for i, w in enumerate(fits):
+            r_cen = st.c * (w.t_c - reported_t0) + float(w.fit.u @ (m_ref - st.centroid))
+            pts[i] = st.centroid + r_cen * w.fit.u
+            covs[i] = r_cen**2 * w.fit.cov_u + (st.c * w.spread) ** 2 * np.outer(w.fit.u, w.fit.u)
+            ok[i] = r_cen > 0
+        return pts, covs, ok
+    # p points toward the source (tau_ij = -(m_j - m_i) . p); the wave slowness along the
+    # direction of travel, which `locate` integrates, is -p.
+    sh = -np.array([w.fit.p_free[:2] for w in fits]).reshape(-1, 2)
+    times = np.array([w.t_c for w in fits]) - reported_t0
+    located, valid = atmosphere.locate(m_ref, sh, times)
+    for i, w in enumerate(fits):
+        if valid[i]:
+            u = located[i] - m_ref
+            rng_i = float(np.linalg.norm(u))
+            u /= rng_i
+            pts[i] = located[i]
+            covs[i] = rng_i**2 * w.fit.cov_u + (st.c * w.spread) ** 2 * np.outer(u, u)
+            ok[i] = True
+    return pts, covs, ok
+
+
+def method_a_fits(st: Setup, cfg: ReconstructionConfig) -> list[WindowFit]:
+    """Method A per window: one direction from the full two-pass TDOA set."""
+    out = []
+    n = st.frames.length
+    for k in st.active:
+        start = int(st.frames.starts[k])
+        shift = coarse_shifts(st, start, cfg.phat_beta)
+        tau, peak = matched_pairs(st, start, shift, st.residual)
+        fit = solve_direction(st.diffs, tau, np.clip(peak, 1e-3, None), st.c, st.sigma_floor)
+        timing = energy_time(st.x[st.ref, start : start + n], start, st.fs)
+        if timing is None:
+            continue
+        mean_peak = float(np.mean(peak))
+        passed = (
+            mean_peak >= cfg.min_peak and fit.residual_rms <= cfg.max_residual_s and slowness_ok(fit, cfg)
+        )
+        out.append(WindowFit(timing[0], timing[1], fit, tau, peak, mean_peak, passed))
+    return out
+
+
+def assemble(
+    method: str, st: Setup, fits: list[WindowFit], pts, covs, ok, cfg: ReconstructionConfig, extra=None
+) -> Reconstruction:
+    """Reconstruction from window fits and placed points (gates: fit.passed & placement ok)."""
+    if not fits:
+        return Reconstruction.empty(method, cfg.config_hash())
+    times = np.array([w.t_c for w in fits])
+    quality = np.array([w.quality for w in fits])
+    keep = np.array([w.passed for w in fits]) & ok
     return Reconstruction(
         points=pts[keep],
         covariances=covs[keep],
         window_times=times[keep],
-        quality=peaks[keep],
-        method="A",
+        quality=quality[keep],
+        method=method,
         config_hash=cfg.config_hash(),
         extra={
             "window_points": pts,
             "window_times": times,
-            "window_peak": peaks,
-            "window_residual_s": resid,
-            "window_slowness_ratio": ratio,
+            "window_peak": quality,
+            "window_residual_s": np.array([w.fit.residual_rms for w in fits]),
+            "window_slowness_ratio": np.array([w.fit.free_ratio for w in fits]),
             "window_passed": keep,
-            "reference_mic": ref,
-            "n_windows_active": int(len(active)),
+            "reference_mic": st.ref,
+            "n_windows_active": int(len(st.active)),
+            **(extra or {}),
         },
     )
+
+
+def reconstruct_plane_wave(
+    rec: Recording, mic_positions: FloatArray, atmosphere: Atmosphere, cfg: ReconstructionConfig
+) -> Reconstruction:
+    """Method A on a recording. Uses only the signals, nominal positions, reported t0 and the
+    *assumed* atmosphere (straight rays if uniform, else traced back via `locate`)."""
+    st = prepare(rec, mic_positions, atmosphere, cfg)
+    fits = method_a_fits(st, cfg)
+    if not fits:
+        return Reconstruction.empty("A", cfg.config_hash())
+    pts, covs, ok = place_points(st, fits, rec.reported_t0, atmosphere)
+    return assemble("A", st, fits, pts, covs, ok, cfg)

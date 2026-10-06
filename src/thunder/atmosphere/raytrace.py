@@ -588,6 +588,7 @@ def trace_ray(
     differences of the profiles). Stops at the ground, at t_max, or when descending through
     z_stop. Returns (t, positions (k, 3), slowness (k, 3)).
     """
+
     def deriv(f, z):
         # Central difference with a step that shrinks near the ground, where the power-law
         # wind profile curves sharply.

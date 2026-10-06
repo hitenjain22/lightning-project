@@ -1,29 +1,29 @@
 {
   "tortuous_2km_ideal": {
     "n_points": 209,
-    "point_error_median_m": 1.3711459989619688,
-    "point_error_p90_m": 3.49644334731541,
-    "coverage_main_50m": 0.9453261666191904,
-    "coverage_50m": 0.9453261666191904,
-    "strike_error_m": 20.2860466056335,
-    "chamfer_m": 9.250938353317709
+    "point_error_median_m": 1.3694060384341027,
+    "point_error_p90_m": 3.507847589968471,
+    "coverage_main_50m": 0.9451915529452867,
+    "coverage_50m": 0.9451915529452867,
+    "strike_error_m": 20.17400566222626,
+    "chamfer_m": 9.2552556501746
   },
   "branched_1500m_ideal": {
     "n_points": 216,
-    "point_error_median_m": 1.3903551513977854,
-    "point_error_p90_m": 4.7476428196688945,
-    "coverage_main_50m": 0.9241491374318944,
-    "coverage_50m": 0.8251102942046621,
-    "strike_error_m": 21.916940218325,
-    "chamfer_m": 18.25599843994366
+    "point_error_median_m": 1.3823525211931533,
+    "point_error_p90_m": 4.751929048652863,
+    "coverage_main_50m": 0.9239488585512083,
+    "coverage_50m": 0.8249652271845975,
+    "strike_error_m": 21.82542374605858,
+    "chamfer_m": 18.256329491252497
   },
   "branched_2km_noisy": {
     "n_points": 32,
-    "point_error_median_m": 3.920923097220159,
-    "point_error_p90_m": 13.182302902819488,
-    "coverage_main_50m": 0.2882975060709217,
-    "coverage_50m": 0.2606694994629955,
-    "strike_error_m": 24.497004292289745,
-    "chamfer_m": 433.62803556496715
+    "point_error_median_m": 3.9094663659704567,
+    "point_error_p90_m": 13.143484281197159,
+    "coverage_main_50m": 0.2890854885523095,
+    "coverage_50m": 0.26138770011970835,
+    "strike_error_m": 24.153561395299207,
+    "chamfer_m": 433.58322973954193
   }
 }

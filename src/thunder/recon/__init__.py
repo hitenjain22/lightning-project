@@ -14,7 +14,9 @@ import dataclasses
 import numpy as np
 
 from thunder.config import ReconstructionConfig
+from thunder.recon.multilat import reconstruct_multilateration
 from thunder.recon.postprocess import dbscan_inliers, estimate_strike_point, skeleton
+from thunder.recon.srp import reconstruct_srp
 from thunder.recon.tdoa import reconstruct_plane_wave
 from thunder.types import Atmosphere, FloatArray, Reconstruction, Recording
 
@@ -29,6 +31,10 @@ def reconstruct(
     mics = np.asarray(array_nominal, dtype=float)
     if config.method == "A":
         raw = reconstruct_plane_wave(recording, mics, atmosphere_assumed, config)
+    elif config.method == "B":
+        raw = reconstruct_srp(recording, mics, atmosphere_assumed, config)
+    elif config.method == "C":
+        raw = reconstruct_multilateration(recording, mics, atmosphere_assumed, config)
     else:  # pragma: no cover - guarded by the config Literal
         raise ValueError(f"unknown method {config.method!r}")
 
