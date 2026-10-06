@@ -52,7 +52,7 @@ def test_channel_overrides_exclude_preset_defaults():
 
 
 def test_monte_carlo_run_folder_presets_and_report(tmp_path):
-    run_dir = run_experiment(small_mc_config(tmp_path, 2))
+    run_dir = run_experiment(small_mc_config(tmp_path, 1))  # parallelism is covered by the test above
     t = pd.read_csv(run_dir / "bolts.csv").set_index("preset")
     assert t["strike_distance_m"].between(1200.0, 1800.0).all()  # explicit field kept for every preset
     assert t.loc["with_incloud", "incloud_length_m"] >= 2000.0  # each preset's own fields applied
