@@ -31,3 +31,7 @@ sensors:
     background_snr_db: 20.0           # in the 10-300 Hz band over the thunder window
     background_color: pink
     wind_speed_mps: 3.0
+
+reconstruction:
+  method: A                           # plane-wave TDOA (Methods B-D arrive in M6/M8)
+  # atmosphere: {...}                 # omit = assume the synthesis atmosphere (oracle run)

@@ -232,14 +232,19 @@ class Recording:
 
 @dataclass(frozen=True)
 class Reconstruction:
-    """Output of any reconstruction method."""
+    """Output of any reconstruction method.
+
+    `extra` carries method diagnostics (raw points before post-processing, per-window gate
+    values, channel skeleton edges) so experiments can analyze failures without re-running.
+    """
 
     points: FloatArray  # (K, 3) m
     covariances: FloatArray  # (K, 3, 3) m^2
-    window_times: FloatArray  # (K,) s, window centers
+    window_times: FloatArray  # (K,) s, recorder time of each point's sound at the reference mic
     quality: FloatArray  # (K,) method-specific score, higher is better
     method: str
     config_hash: str
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _check_shape("points", self.points, (None, 3))
@@ -247,6 +252,10 @@ class Reconstruction:
         _check_shape("covariances", self.covariances, (k, 3, 3))
         _check_shape("window_times", self.window_times, (k,))
         _check_shape("quality", self.quality, (k,))
+
+    @property
+    def n_points(self) -> int:
+        return int(self.points.shape[0])
 
     @classmethod
     def empty(cls, method: str, config_hash: str) -> Reconstruction:

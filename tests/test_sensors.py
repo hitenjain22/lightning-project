@@ -158,8 +158,9 @@ def test_clock_presets():
     gps = A.build_mic_array(big, SensorsConfig(timing={"preset": "gps_synced"}), np.random.default_rng(3))
     assert gps.clock_offset.std() == pytest.approx(1e-6, rel=0.05)
     assert np.all(gps.clock_drift_ppm == 0)
-    shared = A.build_mic_array(ArrayConfig(), SensorsConfig(timing={"preset": "shared_interface"}),
-                               np.random.default_rng(4))
+    shared = A.build_mic_array(
+        ArrayConfig(), SensorsConfig(timing={"preset": "shared_interface"}), np.random.default_rng(4)
+    )
     assert np.all(shared.clock_offset == 0) and len(set(shared.clock_drift_ppm)) == 1
     hand = A.build_mic_array(big, SensorsConfig(timing={"preset": "hand_synced"}), np.random.default_rng(5))
     assert hand.clock_offset.std() == pytest.approx(3e-3, rel=0.05)
@@ -214,8 +215,10 @@ def test_clock_drift_and_offset_map_arrival_times():
     centroid = (t * x**2).sum() / (x**2).sum()
     assert centroid - T_PULSE / 2 == pytest.approx((1 + drift * 1e-6) * r / C0 + offset, abs=1 / FS)
     assert rec.truth is not None
-    np.testing.assert_allclose(rec.truth.extra["segment_arrival_times_recorder"],
-                               (1 + drift * 1e-6) * rec.truth.segment_arrival_times + offset)
+    np.testing.assert_allclose(
+        rec.truth.extra["segment_arrival_times_recorder"],
+        (1 + drift * 1e-6) * rec.truth.segment_arrival_times + offset,
+    )
 
 
 def test_negative_clock_time_rejected():
@@ -318,8 +321,10 @@ def test_snr_matches_configuration(bolt_recording):
         noise = out.signals - clean.signals
         win = active_window(clean)
         band = cfg.noise.snr_band_hz
-        exact = 10 * np.log10(np.mean(band_power(clean.signals[:, win], FS, band))
-                              / np.mean(band_power(noise[:, win], FS, band)))
+        exact = 10 * np.log10(
+            np.mean(band_power(clean.signals[:, win], FS, band))
+            / np.mean(band_power(noise[:, win], FS, band))
+        )
         assert exact == pytest.approx(snr, abs=1e-6)
         # Independent estimate: Welch PSDs integrated over the band.
         f, ps = signal.welch(clean.signals[:, win], FS, nperseg=2048, axis=-1)
@@ -348,10 +353,21 @@ def test_mic_response_corners_and_causality():
 
 def test_phone_highpass_removes_much_of_the_thunder(bolt_recording):
     clean, array = bolt_recording
-    out = corrupt(clean, array, SensorsConfig(mic={"preset": "phone", "gain_tolerance_db": 0,
-                                                   "corner_tolerance": 0, "self_noise_db_spl": None,
-                                                   "clip_db_spl": None, "adc_bits": None}),
-                  np.random.default_rng(2))
+    out = corrupt(
+        clean,
+        array,
+        SensorsConfig(
+            mic={
+                "preset": "phone",
+                "gain_tolerance_db": 0,
+                "corner_tolerance": 0,
+                "self_noise_db_spl": None,
+                "clip_db_spl": None,
+                "adc_bits": None,
+            }
+        ),
+        np.random.default_rng(2),
+    )
     removed = 1 - (out.signals**2).sum() / (clean.signals**2).sum()
     assert removed > 0.3
 
@@ -406,9 +422,18 @@ def test_spectral_derivative_and_jitter():
     # Jitter: y - x has rms sigma * rms(x').
     from thunder.types import GroundTruth, Recording
 
-    rec = Recording(x.copy(), FS, np.zeros((1, 3)), 0.0,
-                    GroundTruth(0.0, np.zeros((1, 3)), np.zeros((1, 1)),
-                                {"segment_pulse_duration": np.ones(1), "stroke_times": np.zeros(1)}))
+    rec = Recording(
+        x.copy(),
+        FS,
+        np.zeros((1, 3)),
+        0.0,
+        GroundTruth(
+            0.0,
+            np.zeros((1, 3)),
+            np.zeros((1, 1)),
+            {"segment_pulse_duration": np.ones(1), "stroke_times": np.zeros(1)},
+        ),
+    )
     arr = MicArray.ideal(np.zeros((1, 3)))
     sigma = 1e-5
     out = corrupt(rec, arr, SensorsConfig(timing={"jitter_std_s": sigma}), np.random.default_rng(6))
@@ -440,12 +465,23 @@ def test_flash_time_error_presets(bolt_recording):
 
 def test_truth_records_every_realized_corruption(bolt_recording):
     clean, array = bolt_recording
-    out = corrupt(clean, array, SensorsConfig(noise={"background_snr_db": 10.0, "wind_speed_mps": 5.0,
-                                                     "rain_db_spl": 50.0}), np.random.default_rng(9))
+    out = corrupt(
+        clean,
+        array,
+        SensorsConfig(noise={"background_snr_db": 10.0, "wind_speed_mps": 5.0, "rain_db_spl": 50.0}),
+        np.random.default_rng(9),
+    )
     assert out.truth is not None
     ex = out.truth.extra
-    for key in ("clean_signals", "t0_error", "clock_offset", "clock_drift_ppm", "mic_gain_db",
-                "nominal_mic_positions", "corruption_info"):
+    for key in (
+        "clean_signals",
+        "t0_error",
+        "clock_offset",
+        "clock_drift_ppm",
+        "mic_gain_db",
+        "nominal_mic_positions",
+        "corruption_info",
+    ):
         assert key in ex
     assert {"wind_rms_pa", "rain_rms_pa", "background_power_band_pa2"} <= set(ex["corruption_info"])
     np.testing.assert_array_equal(ex["clean_signals"], clean.signals)

@@ -1,0 +1,29 @@
+{
+  "tortuous_2km_ideal": {
+    "n_points": 211,
+    "point_error_median_m": 1.5141238373156225,
+    "point_error_p90_m": 3.9128581245009033,
+    "coverage_main_50m": 0.9613977259791615,
+    "coverage_50m": 0.9613977259791615,
+    "strike_error_m": 21.840915910859447,
+    "chamfer_m": 8.496397028626623
+  },
+  "branched_1500m_ideal": {
+    "n_points": 215,
+    "point_error_median_m": 1.2431158466793575,
+    "point_error_p90_m": 4.584223432966988,
+    "coverage_main_50m": 0.9226946531016663,
+    "coverage_50m": 0.8114478346920285,
+    "strike_error_m": 22.97674410046171,
+    "chamfer_m": 18.570527417650563
+  },
+  "branched_2km_noisy": {
+    "n_points": 47,
+    "point_error_median_m": 4.782097299989052,
+    "point_error_p90_m": 12.440118838471903,
+    "coverage_main_50m": 0.3877868608668036,
+    "coverage_50m": 0.3882499982400632,
+    "strike_error_m": 34.394336102400224,
+    "chamfer_m": 337.8881001207498
+  }
+}

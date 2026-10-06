@@ -3,15 +3,18 @@
 Layout: results/<experiment>/<run_id>/
     config.resolved.yaml   the validated config with all defaults filled in
     meta.json              seed, config hash, git commit, versions, timestamp
-    metrics.json           metrics produced by the pipeline stages
+    metrics.json           metrics produced by the pipeline stages (Monte Carlo: summary with CIs)
     arrays.npz             numeric outputs (may be empty)
     figures/               figures produced by the run
+  Monte Carlo runs add: bolts.csv (one row per bolt), points.csv.gz (pooled per-point errors),
+  examples.pkl (full geometry of one example bolt per preset, for figures).
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
+import pickle
 import platform
 import subprocess
 from pathlib import Path
@@ -21,13 +24,10 @@ import numpy as np
 import yaml
 
 from thunder.acoustics.audio import write_wavs
-from thunder.acoustics.synth import synthesize
-from thunder.atmosphere.profiles import build_atmosphere
-from thunder.channel.generator import generate_channel
 from thunder.channel.stats import channel_stats
 from thunder.config import RunConfig
-from thunder.sensors.arrays import build_mic_array
-from thunder.sensors.corruption import corrupt
+from thunder.experiments.montecarlo import run_monte_carlo
+from thunder.experiments.pipeline import run_bolt
 
 
 def git_commit(cwd: Path | None = None) -> dict[str, Any]:
@@ -72,82 +72,89 @@ def write_run_files(
     np.savez(run_dir / "arrays.npz", **arrays)  # type: ignore[arg-type]
 
 
-def run_pipeline(cfg: RunConfig) -> Path:
-    """Run every configured stage and write outputs. Returns the run directory.
+def _jsonable(v: Any) -> Any:
+    if isinstance(v, np.ndarray):
+        return v.tolist()
+    if isinstance(v, np.generic):
+        return v.item()
+    if isinstance(v, dict):
+        return {k: _jsonable(x) for k, x in v.items()}
+    if isinstance(v, list | tuple):
+        return [_jsonable(x) for x in v]
+    return v
 
-    Stages are added milestone by milestone (generate, synthesize, corrupt,
-    reconstruct, evaluate). A stage runs only if its config section is present.
+
+def run_pipeline(cfg: RunConfig) -> Path:
+    """Run every configured stage for one bolt (seed = cfg.seed) and write its outputs.
+
+    A stage runs only if its config section is present: generate (channel), synthesize
+    (synthesis), sensors (sensors), reconstruct + evaluate (reconstruction).
     """
     run_dir = make_run_dir(cfg)
-    # Independent child streams per stage: changing one stage's settings never changes the
-    # random draws of another (e.g. a new noise level keeps the same bolt and array).
-    channel_rng, array_rng, synth_rng, sensor_rng = np.random.default_rng(cfg.seed).spawn(4)
-
-    stages: list[str] = []
-    metrics: dict[str, Any] = {"stages": stages}
-    arrays: dict[str, np.ndarray] = {}
-
-    if cfg.channel is not None:
-        ch = generate_channel(cfg.channel, channel_rng, seed=cfg.seed)
-        stages.append("generate")
-        metrics["channel"] = channel_stats(ch)
+    res = run_bolt(cfg, cfg.seed)
+    ch = res.channel
+    metrics: dict[str, Any] = {"stages": res.stages, "timings_s": res.timings_s, "channel": channel_stats(ch)}
+    arrays: dict[str, np.ndarray] = {
+        "channel_nodes": ch.nodes,
+        "channel_segments": ch.segments,
+        "channel_energy_per_length": ch.energy_per_length,
+        "channel_branch_id": ch.branch_id,
+        "channel_is_main": ch.is_main,
+        "channel_is_incloud": ch.is_incloud,
+        "channel_stroke_times": ch.stroke_times,
+    }
+    rec, array = res.recording, res.array
+    if rec is not None and array is not None:
+        assert rec.truth is not None
+        metrics["recording"] = {
+            "duration_s": rec.duration,
+            "peak_pa": float(np.max(np.abs(rec.signals))),
+            "rms_pa": float(np.sqrt(np.mean(rec.signals**2))),
+        }
         arrays.update(
-            channel_nodes=ch.nodes,
-            channel_segments=ch.segments,
-            channel_energy_per_length=ch.energy_per_length,
-            channel_branch_id=ch.branch_id,
-            channel_is_main=ch.is_main,
-            channel_is_incloud=ch.is_incloud,
-            channel_stroke_times=ch.stroke_times,
+            signals=rec.signals,
+            mic_positions=rec.nominal_mic_positions,
+            true_mic_positions=array.true_positions,
+            truth_segment_arrival_times=rec.truth.segment_arrival_times,
         )
-
-        if cfg.synthesis is not None:
-            syn = cfg.synthesis
-            atm = build_atmosphere(cfg.atmosphere)
-            array = build_mic_array(cfg.array, cfg.sensors, array_rng)
-            rec = synthesize(
-                ch,
-                atm,
-                array,
-                cfg.sample_rate_hz,
-                cfg.oversample,
-                syn.emitter_spacing_m,
-                syn.acoustic_efficiency,
-                synth_rng,
-                syn.micro_turn_mean,
-                syn.micro_scale_m,
-            )
-            stages.append("synthesize")
-            if cfg.sensors is not None:
-                z_mic = np.array([float(np.mean(array.true_positions[:, 2]))])
-                rec = corrupt(
-                    rec, array, cfg.sensors, sensor_rng,
-                    sound_speed=float(atm.sound_speed(z_mic)[0]), air_density=float(atm.density(z_mic)[0]),
-                )
-                stages.append("sensors")
-                assert rec.truth is not None
-                metrics["sensors"] = {
-                    "t0_error_s": rec.truth.extra["t0_error"],
-                    "clock_offset_s": rec.truth.extra["clock_offset"].tolist(),
-                    "clock_drift_ppm": rec.truth.extra["clock_drift_ppm"].tolist(),
-                    "position_error_m": np.linalg.norm(array.true_positions - array.nominal_positions,
-                                                       axis=1).tolist(),
-                    **rec.truth.extra["corruption_info"],
-                }
-            assert rec.truth is not None
-            metrics["recording"] = {
-                "duration_s": rec.duration,
-                "peak_pa": float(np.max(np.abs(rec.signals))),
-                "rms_pa": float(np.sqrt(np.mean(rec.signals**2))),
+        if "sensors" in res.stages:
+            ex = rec.truth.extra
+            metrics["sensors"] = {
+                "t0_error_s": ex["t0_error"],
+                "clock_offset_s": ex["clock_offset"],
+                "clock_drift_ppm": ex["clock_drift_ppm"],
+                "position_error_m": np.linalg.norm(array.true_positions - array.nominal_positions, axis=1),
+                **ex["corruption_info"],
             }
-            arrays.update(
-                signals=rec.signals,
-                mic_positions=rec.nominal_mic_positions,
-                true_mic_positions=array.true_positions,
-                truth_segment_arrival_times=rec.truth.segment_arrival_times,
-            )
-            if syn.write_wav:
-                metrics["recording"]["wav_gain_per_pa"] = write_wavs(rec, run_dir / "audio")
+        assert cfg.synthesis is not None
+        if cfg.synthesis.write_wav:
+            metrics["recording"]["wav_gain_per_pa"] = write_wavs(rec, run_dir / "audio")
+    if res.reconstruction is not None:
+        r = res.reconstruction
+        metrics["evaluation"] = res.metrics
+        arrays.update(
+            recon_points=r.points,
+            recon_covariances=r.covariances,
+            recon_window_times=r.window_times,
+            recon_quality=r.quality,
+            recon_gated_points=r.extra["gated_points"],
+            recon_skeleton_edges=r.extra["skeleton_edges"],
+            recon_point_error_m=res.per_point.get("error_m", np.zeros(0)),
+        )
+    write_run_files(cfg, run_dir, _jsonable(metrics), arrays)
+    return run_dir
 
-    write_run_files(cfg, run_dir, metrics, arrays)
+
+def run_experiment(cfg: RunConfig) -> Path:
+    """Single bolt, or a Monte Carlo if the config has a monte_carlo section."""
+    if cfg.monte_carlo is None:
+        return run_pipeline(cfg)
+    run_dir = make_run_dir(cfg)
+    mc = run_monte_carlo(cfg)
+    mc.table.to_csv(run_dir / "bolts.csv", index=False)
+    if len(mc.points):
+        mc.points.to_csv(run_dir / "points.csv.gz", index=False)
+    with open(run_dir / "examples.pkl", "wb") as f:
+        pickle.dump(mc.examples, f)
+    write_run_files(cfg, run_dir, _jsonable(mc.summary), {})
     return run_dir

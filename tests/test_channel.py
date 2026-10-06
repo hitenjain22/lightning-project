@@ -144,8 +144,10 @@ def test_tortuous_has_no_branches_branched_has_some():
 def test_branch_energy_is_fraction_of_parent():
     cfg = ChannelConfig(preset="branched", branch_probability=0.05)
     ch = generate_channel(cfg, np.random.default_rng(8))
-    levels = {round(math.log(e / cfg.energy_per_length_main, cfg.branch_energy_fraction), 9)
-              for e in ch.energy_per_length}
+    levels = {
+        round(math.log(e / cfg.energy_per_length_main, cfg.branch_energy_fraction), 9)
+        for e in ch.energy_per_length
+    }
     assert levels <= set(range(cfg.branch_max_depth + 1)) and {0, 1} <= levels
     np.testing.assert_allclose(ch.energy_per_length[ch.is_main], cfg.energy_per_length_main)
 

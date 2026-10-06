@@ -32,8 +32,6 @@ def test_detector_catches_violations():
 def test_recon_modules_do_not_access_truth():
     assert RECON_DIR.is_dir()
     problems = {
-        str(p.relative_to(RECON_DIR)): v
-        for p in RECON_DIR.rglob("*.py")
-        if (v := _violations(p.read_text()))
+        str(p.relative_to(RECON_DIR)): v for p in RECON_DIR.rglob("*.py") if (v := _violations(p.read_text()))
     }
     assert not problems, f"recon/ accesses ground truth: {problems}"

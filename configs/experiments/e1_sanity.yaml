@@ -1,0 +1,32 @@
+# E1 sanity benchmark (SPEC.md Phase 7): ideal conditions, Method A, 200 bolts at 1-3 km.
+# Ideal = still uniform air, no noise, perfect clocks and positions, exact flash time,
+# 5 mics (square + center), 50 m aperture. The reconstruction assumes the synthesis
+# atmosphere, so this is an ORACLE run: an upper bound, not a headline number.
+# Method A gates were tuned on development seeds 5000+ (scripts/dev_tune_method_a.py),
+# disjoint from the seeds spawned here.
+experiment: e1_sanity
+seed: 20261005
+description: E1 sanity benchmark, ideal conditions, Method A, 200 bolts at 1-3 km.
+
+channel:
+  strike_distance_m: [1000.0, 3000.0]
+
+atmosphere:
+  model: uniform
+  temperature_c: 25.0
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+  mic_height_m: 1.5
+
+synthesis:
+  emitter_spacing_m: 0.5
+  write_wav: false
+
+reconstruction:
+  method: A
+
+monte_carlo:
+  n_bolts: 200
+  presets: [tortuous, branched, with_incloud]

@@ -337,6 +337,70 @@ class SynthesisConfig(StrictModel):
         return None if self.micro_turn_mean_deg is None else math.radians(self.micro_turn_mean_deg)
 
 
+class ReconstructionConfig(StrictModel):
+    """Phase 5 reconstruction. Defaults were tuned on development seeds disjoint from E1."""
+
+    method: Literal["A"] = "A"
+    # Assumed atmosphere. None = the synthesis atmosphere (an *oracle* run; labeled as such).
+    atmosphere: AtmosphereConfig | None = None
+    # Preprocessing
+    band_hz: tuple[float, float] = (10.0, 300.0)  # SPEC.md default analysis band
+    filter_order: int = Field(default=4, ge=1, le=10)  # zero-phase Butterworth, per band edge
+    whiten: bool = False
+    window_s: float = Field(default=0.1, gt=0)  # SPEC.md default
+    overlap: float = Field(default=0.5, ge=0, lt=1)
+    # Windows within this of the loudest. Wide on purpose: the noise-floor test and the
+    # quality gates decide; 40 dB dropped faint but valid upper-channel sound (docs/log.md).
+    detection_dynamic_range_db: float = Field(default=80.0, gt=0)
+    detection_snr_db: float = Field(default=10.0, ge=0)  # and this far above the noise floor
+    # Method A (plane-wave TDOA) gates
+    lag_margin_s: float = Field(default=0.002, ge=0)  # beyond d_ij / c, for clock/position errors
+    # beta-PHAT weighting |G|^-beta: 1 = full PHAT, 0 = plain cross-correlation. 0.6 was within
+    # 0.05 m of the best median error at every SNR on development bolts and keeps enough
+    # whitening for multipath (ground reflection, Phase 3).
+    phat_beta: float = Field(default=0.6, ge=0, le=1)
+    residual_search_s: float = Field(default=0.01, gt=0)  # pass-2 lag search around pass-1 delays
+    min_peak: float = Field(default=0.3, ge=0, le=1)  # mean GCC-PHAT peak (non-binding when noise-free)
+    max_residual_s: float = Field(default=2e-3, gt=0)  # RMS TDOA least-squares residual
+    slowness_tolerance: float = Field(default=0.15, gt=0)  # allowed |c * p_unconstrained| - 1
+    # Post-processing
+    dbscan_eps_m: float = Field(default=300.0, gt=0)
+    dbscan_min_samples: int = Field(default=2, ge=1)
+    skeleton_spur_m: float = Field(default=50.0, ge=0)
+
+    @field_validator("band_hz")
+    @classmethod
+    def _band(cls, v: tuple[float, float]) -> tuple[float, float]:
+        if not 0 < v[0] < v[1]:
+            raise ValueError(f"band_hz must satisfy 0 < low < high, got {v}")
+        return v
+
+    def config_hash(self) -> str:
+        blob = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(blob.encode()).hexdigest()[:12]
+
+
+class EvaluationConfig(StrictModel):
+    """Phase 6 metrics."""
+
+    coverage_distances_m: list[float] = Field(default_factory=lambda: [10.0, 25.0, 50.0, 100.0, 200.0])
+    truth_sample_spacing_m: float = Field(default=0.5, gt=0)
+
+
+def _default_mc_presets() -> list[ChannelPreset]:
+    # Single-stroke presets: stroke separation is a stretch goal, so multi_stroke belongs to E5.
+    return ["tortuous", "branched", "with_incloud"]
+
+
+class MonteCarloConfig(StrictModel):
+    """Run the pipeline over many random bolts (SPEC.md Phase 6 aggregation)."""
+
+    n_bolts: int = Field(default=200, ge=1)
+    presets: list[ChannelPreset] = Field(default_factory=_default_mc_presets)
+    workers: int | None = Field(default=None, ge=1)  # None = all CPU cores
+    bootstrap_samples: int = Field(default=2000, ge=100)
+
+
 class RunConfig(StrictModel):
     """Top-level run configuration."""
 
@@ -351,6 +415,9 @@ class RunConfig(StrictModel):
     array: ArrayConfig = Field(default_factory=ArrayConfig)
     synthesis: SynthesisConfig | None = None
     sensors: SensorsConfig | None = None
+    reconstruction: ReconstructionConfig | None = None
+    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
+    monte_carlo: MonteCarloConfig | None = None
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")

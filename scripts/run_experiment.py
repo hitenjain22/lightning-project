@@ -1,4 +1,4 @@
-"""Run one pipeline from a YAML config.
+"""Run one pipeline (or a Monte Carlo, if the config has a monte_carlo section) from a YAML config.
 
 Usage: python scripts/run_experiment.py configs/base.yaml [--seed N]
 """
@@ -6,7 +6,7 @@ Usage: python scripts/run_experiment.py configs/base.yaml [--seed N]
 import argparse
 
 from thunder.config import load_config
-from thunder.experiments.runner import run_pipeline
+from thunder.experiments.runner import run_experiment
 
 
 def main() -> None:
@@ -17,7 +17,7 @@ def main() -> None:
 
     overrides = {"seed": args.seed} if args.seed is not None else None
     cfg = load_config(args.config, overrides)
-    run_dir = run_pipeline(cfg)
+    run_dir = run_experiment(cfg)
     print(f"Wrote {run_dir}")
 
 

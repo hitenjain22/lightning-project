@@ -49,3 +49,42 @@
 - **Fixes found during an audit before commit:** (1) Self-noise originally spread the datasheet's 20 Hz–20 kHz level over 0–4 kHz, overstating the noise density by about 7 dB. It's now density-based. (2) The `random_disk` spacing rule required 100% area coverage, which can loop forever. It's now 25% coverage, with an iteration guard. (3) `adc_bits` without a clip level is rejected, because the ADC full scale would be undefined. (4) Zero-σ draws produced −0.0, now normalized to 0.0.
 - **Measured preset effects** (branched bolt): measurement mic −0.2% energy; audio mic −3.4% (−22% at 1 km, where it also clips); phone −45% at 3 km and −71% at 1 km (100 Hz high-pass, plus clipping on 0.17% of samples at 1 km).
 - **Flash-time error expressed as range error:** photodiode 3 mm, lightning network 0.35 m, 30 fps video 3.3 m (σ).
+
+## 2026-10-05: M4 Method A, metrics, and E1
+
+**Method A design (`recon/tdoa.py`)**
+- **Two-pass GCC.** On a 50 m array the same sound can arrive up to 146 ms apart at two mics, longer than a 100 ms window, so one fixed window per mic hears different chunks of the channel.
+  - **Pass 1** pairs a short window on the reference mic with a long window on each other mic covering all physical lags.
+  - **Measured problem:** PHAT across mismatched windows gave a lag σ of 0.37 samples, against 0.029 for plain cross-correlation, because the extra content in the long window gets whitened up.
+  - **Pass 2** therefore puts equal Hann windows on the same sound at both mics of every pair and measures only the residual lag: σ = 0.002 samples, 160× better. Each mic's pass-2 spectrum is computed once per window and shared by all its pairs.
+- **One constrained least-squares solve for direction.** min ‖W^½(Ap + τ)‖² subject to |p| = 1/c, solved exactly with the secular equation in the eigenbasis of H = AᵀWA.
+  - **Planar arrays** are the trust-region "hard case": least squares for the horizontal slowness, plus the vertical component that restores |p| = 1/c, pointing upward.
+  - **One code path** handles planar, mast and noisy cases. With exact plane-wave TDOAs, the direction error is below 10⁻⁶°.
+- **Covariance (bug found by its own test).**
+  - **The bug:** my first version projected the unconstrained covariance onto the tangent plane, which predicted 4.1× the Monte Carlo spread. That projection ignores the information the constraint itself carries.
+  - **The fix:** restrict the normal matrix to the tangent plane first, cov(u) = c²σ²·T(TᵀHT)⁻¹Tᵀ. The residual variance now uses n − 2 degrees of freedom, since the fit has two free parameters.
+  - **Result:** this matches Monte Carlo within 8% (trace), and it also covers planar arrays and near-horizontal arrivals.
+- **Range** uses the energy centroid of the reference window, not its center. This removes up to ±17 m of within-window range ambiguity.
+- **Band-pass** is zero-phase (forward-backward), so filtering never shifts timing (tested).
+- **β-PHAT, β = 0.6.** On 18 development bolts at SNR ∞/25/15/5 dB, lowering β from 1 to 0.6 cut the median error at every SNR (clean: 1.51 → 1.37 m; 15 dB: 3.63 → 2.73 m). Applying β in pass 1 as well raised coverage (clean 0.80 → 0.83; 25 dB 0.53 → 0.60). β = 0.3 was marginally better still, but 0.6 keeps the whitening that multipath (ground reflection, M5) needs.
+
+**Tuning protocol.** All gates were tuned on development bolts (seeds 5000+, `scripts/dev_tune_method_a.py`), never on E1's seeds. On a grid of 72 combinations over 30 bolts, the median error stayed between 1.0 and 1.6 m everywhere, so the method isn't fragile.
+- **Detection dynamic range: 40 → 80 dB.** The 40 dB cut dropped faint but valid upper-channel sound (seed 1002: 0% coverage above 4.2 km). The noise floor and the quality gates now decide.
+- **Residual gate: 2 ms.** Stricter gates traded coverage for a tiny accuracy gain.
+- **`min_peak`** never binds when there's no noise; it stays at 0.3 as a safeguard for noisy recordings.
+- **DBSCAN `min_samples` = 2, `eps` = 300 m.** At 3 / 150 m, isolated but correct points near the ground were deleted.
+- **Window length: 100 ms (the spec default).** 50 ms windows were more accurate (1.0 vs 1.5 m median) but covered less (0.77 vs 0.80). Accuracy is already 30× better than the target, so coverage wins.
+
+**Strike point.** The estimator moved into reconstruction (`Reconstruction.extra["strike_point"]`), because it's a method output that uses no truth. Capped extrapolation beat projecting the lowest points straight down on development bolts (median 39 vs 54 m, 75th percentile 55 vs 108 m). The cap of 0.5 is physical (about 27° lean), not tuned: 0.25 scored 1 m better.
+
+**Metrics.**
+- **Point error** is the exact point-to-segment distance against every segment (no sampling error).
+- **Coverage and Chamfer** use 0.5 m truth samples weighted by length.
+- **Pooled statistics** use a cluster bootstrap that resamples whole bolts, because points from one bolt are correlated. Resampling points understated the CI width by more than 3× in a test.
+
+**Bugs caught by the new tests before any results were trusted.**
+1. **Monte Carlo presets.** Workers rebuilt the config from a full dump, so every channel field counted as user-set and overrode each preset's own settings: `with_incloud` bolts had no in-cloud section. Overrides are now computed in the parent (`channel_overrides`).
+2. **Tuning script.** It re-sent a 190 MB recording cache with every task. Workers now load it once.
+3. **Slow test.** A brute-force reference took 143 s; a KD-tree gives the same answer. The full suite now takes about 75 s (spec: under 2 min).
+
+**Regression goldens.** `tests/golden/roundtrip_metrics.json` holds three fixed-seed cases: tortuous at 2 km, branched at 1.5 km, and branched at 2 km with measurement mic, GPS clocks, surveyed positions and 15 dB SNR. Regenerate them with `scripts/update_golden.py`, only after explaining the change here.
