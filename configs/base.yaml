@@ -5,3 +5,6 @@ results_root: results
 sample_rate_hz: 8000.0   # recording sample rate (SPEC.md conventions)
 oversample: 8            # internal oversampling factor for fractional delays
 description: Empty M0 pipeline; checks config loading and results-folder output.
+
+channel:
+  preset: branched          # straight | tortuous | branched | with_incloud | multi_stroke

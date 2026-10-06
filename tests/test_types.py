@@ -19,6 +19,7 @@ def _two_segment_channel() -> Channel:
         energy_per_length=np.full(2, 1e5),
         branch_id=np.zeros(2, dtype=np.int64),
         is_main=np.ones(2, dtype=bool),
+        is_incloud=np.zeros(2, dtype=bool),
     )
 
 
@@ -33,9 +34,10 @@ def test_channel_valid():
 def test_channel_rejects_bad_shapes():
     ch = _two_segment_channel()
     with pytest.raises(ValueError):
-        Channel(ch.nodes, ch.segments, np.ones(3), ch.branch_id, ch.is_main)
+        Channel(ch.nodes, ch.segments, np.ones(3), ch.branch_id, ch.is_main, ch.is_incloud)
     with pytest.raises(ValueError):
-        Channel(ch.nodes, np.array([[0, 5]]), np.ones(1), np.zeros(1, int), np.ones(1, bool))
+        one = np.ones(1, bool)
+        Channel(ch.nodes, np.array([[0, 5]]), np.ones(1), np.zeros(1, int), one, ~one)
 
 
 def test_mic_array_ideal():

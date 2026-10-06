@@ -1,0 +1,4 @@
+# M1 deliverable: channel gallery across all presets plus per-preset stats.
+experiment: channel_gallery
+seed: 1
+description: Gallery of 12 channels across presets and a 100-per-preset stats table.

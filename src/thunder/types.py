@@ -35,7 +35,8 @@ class Channel:
     segments: IntArray  # (S, 2) node index pairs (parent, child)
     energy_per_length: FloatArray  # (S,) J/m
     branch_id: IntArray  # (S,) 0 = main channel
-    is_main: BoolArray  # (S,) True for main-channel segments
+    is_main: BoolArray  # (S,) True for main (ground-reaching) channel segments
+    is_incloud: BoolArray  # (S,) True for the near-horizontal in-cloud section
     stroke_times: FloatArray = field(default_factory=lambda: np.zeros(1))  # (strokes,) s
     metadata: dict[str, Any] = field(default_factory=dict)  # seed, generator params
 
@@ -43,7 +44,7 @@ class Channel:
         _check_shape("nodes", self.nodes, (None, 3))
         _check_shape("segments", self.segments, (None, 2))
         s = self.segments.shape[0]
-        for name in ("energy_per_length", "branch_id", "is_main"):
+        for name in ("energy_per_length", "branch_id", "is_main", "is_incloud"):
             _check_shape(name, getattr(self, name), (s,))
         _check_shape("stroke_times", self.stroke_times, (None,))
         if s and (np.min(self.segments) < 0 or np.max(self.segments) >= self.nodes.shape[0]):
@@ -52,6 +53,11 @@ class Channel:
     @property
     def n_segments(self) -> int:
         return int(self.segments.shape[0])
+
+    @property
+    def refires(self) -> BoolArray:
+        """Segments that fire on every stroke (main + in-cloud); branches fire on the first only."""
+        return self.is_main | self.is_incloud
 
     def segment_endpoints(self) -> tuple[FloatArray, FloatArray]:
         """Start and end positions of every segment, each (S, 3)."""

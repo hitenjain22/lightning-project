@@ -20,6 +20,8 @@ from typing import Any
 import numpy as np
 import yaml
 
+from thunder.channel.generator import generate_channel
+from thunder.channel.stats import channel_stats
 from thunder.config import RunConfig
 
 
@@ -45,20 +47,10 @@ def make_run_dir(cfg: RunConfig, now: dt.datetime | None = None) -> Path:
     return run_dir
 
 
-def run_pipeline(cfg: RunConfig) -> Path:
-    """Run every configured stage and write outputs. Returns the run directory.
-
-    Stages are added milestone by milestone (generate, synthesize, corrupt,
-    reconstruct, evaluate). For M0 the pipeline has no stages.
-    """
-    run_dir = make_run_dir(cfg)
-    rng = np.random.default_rng(cfg.seed)
-
-    stages: list[str] = []
-    metrics: dict[str, Any] = {"stages": stages}
-    arrays: dict[str, np.ndarray] = {}
-    _ = rng  # passed to stages once they exist
-
+def write_run_files(
+    cfg: RunConfig, run_dir: Path, metrics: dict[str, Any], arrays: dict[str, np.ndarray]
+) -> None:
+    """Write the resolved config, metadata, metrics and arrays into run_dir."""
     with open(run_dir / "config.resolved.yaml", "w") as f:
         yaml.safe_dump(cfg.to_dict(), f, sort_keys=False)
     meta = {
@@ -73,4 +65,34 @@ def run_pipeline(cfg: RunConfig) -> Path:
     (run_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
     np.savez(run_dir / "arrays.npz", **arrays)  # type: ignore[arg-type]
+
+
+def run_pipeline(cfg: RunConfig) -> Path:
+    """Run every configured stage and write outputs. Returns the run directory.
+
+    Stages are added milestone by milestone (generate, synthesize, corrupt,
+    reconstruct, evaluate). A stage runs only if its config section is present.
+    """
+    run_dir = make_run_dir(cfg)
+    rng = np.random.default_rng(cfg.seed)
+
+    stages: list[str] = []
+    metrics: dict[str, Any] = {"stages": stages}
+    arrays: dict[str, np.ndarray] = {}
+
+    if cfg.channel is not None:
+        ch = generate_channel(cfg.channel, rng, seed=cfg.seed)
+        stages.append("generate")
+        metrics["channel"] = channel_stats(ch)
+        arrays.update(
+            channel_nodes=ch.nodes,
+            channel_segments=ch.segments,
+            channel_energy_per_length=ch.energy_per_length,
+            channel_branch_id=ch.branch_id,
+            channel_is_main=ch.is_main,
+            channel_is_incloud=ch.is_incloud,
+            channel_stroke_times=ch.stroke_times,
+        )
+
+    write_run_files(cfg, run_dir, metrics, arrays)
     return run_dir
