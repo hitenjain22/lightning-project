@@ -88,3 +88,49 @@
 3. **Slow test.** A brute-force reference took 143 s; a KD-tree gives the same answer. The full suite now takes about 75 s (spec: under 2 min).
 
 **Regression goldens.** `tests/golden/roundtrip_metrics.json` holds three fixed-seed cases: tortuous at 2 km, branched at 1.5 km, and branched at 2 km with measurement mic, GPS clocks, surveyed positions and 15 dB SNR. Regenerate them with `scripts/update_golden.py`, only after explaining the change here.
+
+## 2026-10-05: M5 realistic atmosphere (Phase 3)
+
+**No travel-time tables: an exact eigenray solver instead.** The spec suggests precomputed tables T(h, r[, φ]). With wind, a table accurate to a fraction of a sample needs hundreds of MB and awkward 2D inverse interpolation near overhead sources. A layered medium has a closed-form structure instead: the horizontal slowness s_h is conserved, so travel time T, drift X and the Jacobian ∂X/∂s_h are integrals over height. The eigenray from a point to a mic is solved by:
+- a bracketed 1D Newton iteration along the source-to-mic azimuth, using an analytic directional derivative;
+- then a 2D Newton step for the sideways drift caused by crosswind.
+
+This is exact for wind, including the lateral drift that the common "effective sound speed" approximation ignores. Shadow is detected exactly: a point is shadowed when even the limiting ray falls short.
+
+**Numerics.** Each part was validated before the next was built.
+- **Per-layer weights.** Assuming S = s_z² is linear in z, the factors 1/√S and 1/S^(3/2) integrate exactly. My first rule averaged the numerators. I then derived closed-form node weights exact when *both* the numerator and S are linear (`layer_weights`; checked against quadrature to 1e-9). With 50 m layers and no wind, this cut the worst error from 243 µs to 3.5 µs.
+- **Graded height grid.** A regular 5 m grid gave 25 µs median error with wind, because the power-law wind changes fastest in the lowest meters. The grid now starts at 5 cm and grows by 15% per layer up to the step cap. That's the scale-free spacing a power law needs, at about 40 extra nodes. Inversion edges and the tropopause are inserted as nodes so no layer straddles a kink.
+- **Step cap: 20 m.** Against a 0.5 m reference:
+
+  | Case | Median | Worst |
+  | --- | --- | --- |
+  | Still air, with inversion | 0.27 µs | 2.6 µs |
+  | Wind 8 m/s with 15°/km veer | 6.9 µs | 53 µs (about 2 cm of range) |
+
+  These errors are smooth across the array, so mic-to-mic delays are far more accurate still.
+- **Uniform limit.** Travel time matches R/c to 1e-11, direction to 1e-14, and ray-tube amplitude matches 1/R to 1e-8. The amplitude check needs the ρc impedance factor: a uniform-c stratified atmosphere still has hydrostatic density.
+- **Shadow distance.** It matches the circular-ray prediction √(2R_cH − H²) to within 2% (test).
+- **Independent reference.** The fast solver agrees with the `solve_ivp` Hamiltonian tracer to under 0.5 m landing error and 0.1 ms in time, with the dispersion relation conserved to 5e-6. The tracer's own derivative step had to shrink near the ground to reach that.
+
+**Speed (no numba).** numba's llvmlite has no build for this Intel macOS with NumPy 2.5, and a dependency that doesn't install everywhere is unacceptable. Measured improvements:
+- **Node weights:** evaluating each height node once, plus a scalar directional derivative in the 1D stage, made the solver 13× faster.
+- **Initial guesses:** a cached windless fan per mic height cut the number of Newton passes.
+- **Warm starts:** each mic starts from the previous mic's solution (2.3× faster with wind; results within 1 µs; the full solver is the fallback).
+- **Absorption:** kernels cached across mics, 100 m path-length bins, and a vectorized attenuation lookup took synthesis from 26 s to 13 s per bolt with every effect on.
+- **Synthesis:** rays are solved only at channel nodes. Emitter times use a cubic Hermite interpolation with known end slopes (∇T = −s), plus a first-order correction for the sub-meter wiggle. Against exact per-emitter rays: max 0.23 µs, and identical shadow sets (test).
+
+**Bugs caught before any results were trusted.**
+1. **Reflected path crash.** The 1D Newton loop's closure used full-length arrays on a subset of rays. The direct path only survived because every ray converged in one step.
+2. **Fan builder.** The first version was O(levels²): it called the integrator once per height. It was rewritten as one cumulative pass.
+3. **Warm start disabled.** The guess was discarded entirely if any single ray was shadowed. It's now applied per ray.
+4. **Method A sign.** The fitted slowness points *toward* the source, while ray slowness points along propagation, so the back-trace was 5 km off until the sign was fixed. The oracle round trip through wind then gave about 2 m median.
+5. **Bool inversion.** `~bool` in `ray_geometry` gave the right answer only by integer coincidence. It's now `not`.
+6. **Test bugs.** A fixed FFT length missed a pulse arriving at 17 s; test frequencies sat on the N-wave's spectral zeros; and a circular-angle comparison wasn't circular.
+
+**Humidity in the uniform model too.** The spec requires the humidity correction. With it in only one model, a zero-gradient stratified atmosphere wouldn't match the uniform one. Adding it changes c by about 0.2%, which moved the golden metrics (for example 1.51 → 1.37 m). With the old dry c restored, the refactored synthesis reproduces the previous goldens exactly (to within 1e-9), so the shift is only the intended physics change. The goldens were regenerated.
+
+**Contract changes.**
+- `ArrivalPath` gains `source_slowness` and `path_length`, and NaN marks shadow.
+- `Atmosphere` gains `propagate_reflected`, `paths`, `locate`, `attenuation_db`, the effect toggles and `is_uniform`.
+- `propagate` takes an optional `guess`.
+- `RayTableConfig` was replaced by `RayConfig`, which sets the solver numerics.

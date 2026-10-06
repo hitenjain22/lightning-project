@@ -33,6 +33,24 @@ PRESET_COLORS = {
 }
 
 
+def describe_atmosphere(a: dict | None, oracle: bool = False) -> str:
+    """Short human-readable description of an atmosphere config (as stored in config.resolved.yaml)."""
+    if a is None:
+        return "ORACLE (the synthesis atmosphere)" if oracle else "default"
+    if a.get("model", "uniform") == "uniform":
+        text = f"uniform, {a.get('temperature_c', 25.0):g} C (straight rays)"
+    else:
+        t_c, lapse = a.get("temperature_c", 25.0), a.get("lapse_rate_k_per_km", 6.5)
+        text = f"stratified, {t_c:g} C, lapse {lapse:g} K/km"
+        if a.get("inversion"):
+            inv = a["inversion"]
+            text += f", inversion +{inv['delta_k']:g} K over {inv['base_m']:g}-{inv['top_m']:g} m"
+        w = a.get("wind")
+        text += f", wind {w['speed_mps']:g} m/s from {w['direction_from_deg']:g} deg" if w else ", no wind"
+    extras = [name for name in ("absorption", "ground_reflection") if a.get(name)]
+    return text + (f" (+{', '.join(extras)})" if extras else "")
+
+
 def _ci(v: Any, unit: str = "m", digits: int = 1) -> str:
     est, lo, hi = v
     return f"{est:.{digits}f} {unit} [{lo:.{digits}f}, {hi:.{digits}f}]"
@@ -208,14 +226,15 @@ def _summary_markdown(
 ) -> list[str]:
     o = summary["overall"]
     rc = cfg.get("reconstruction") or {}
-    atmosphere = "oracle (the synthesis atmosphere)" if rc.get("atmosphere") is None else "mismatched"
+    atmosphere = describe_atmosphere(rc.get("atmosphere"), oracle=True)
+    truth_atm = describe_atmosphere(cfg.get("atmosphere"))
     lines = [
         f"Run `{meta['experiment']}`, seed {meta['seed']}, config hash `{meta['config_hash']}`, "
         f"commit `{meta['git']['commit'][:10]}`{' (dirty)' if meta['git'].get('dirty') else ''}.",
         "",
         f"Bolts: {o['n_bolts']} ({', '.join(presets)}), reconstructed points: {o['n_points']}, "
         f"bolts with no points: {o.get('bolts_with_no_points', 0)}. "
-        f"Atmosphere assumed by reconstruction: {atmosphere}.",
+        f"Synthesis atmosphere: {truth_atm}. Atmosphere assumed by reconstruction: {atmosphere}.",
         "",
         "| Metric (95% bootstrap CI) | " + " | ".join(["all"] + presets) + " |",
         "|" + " --- |" * (len(presets) + 2),
