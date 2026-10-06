@@ -26,8 +26,11 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-from thunder.config import ArrayConfig, load_config
-from thunder.experiments.design import evaluate_layout, optimize_layout
+from thunder.config import ArrayConfig, ChannelConfig, load_config
+from thunder.eval.metrics import sample_channel
+from thunder.experiments.design import angular_variance, evaluate_layout, optimize_layout
+from thunder.experiments.montecarlo import channel_overrides
+from thunder.experiments.pipeline import run_bolt
 from thunder.experiments.sweeps import (
     ci_text,
     load_run,
@@ -164,6 +167,47 @@ def build(
 # --- analysis -----------------------------------------------------------------------
 
 
+def channel_directions(
+    n_bolts: int, spacing: float = 20.0
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """(azimuth, elevation, length weight) of points along each simulated bolt's true channel.
+
+    Regenerates exactly the run's channels (same seeds, presets and overrides; channels only).
+    Directions are from the array centroid at mic height.
+    """
+    cfg = load_config(CONFIG)
+    assert cfg.monte_carlo is not None
+    cfg = cfg.model_copy(update={"synthesis": None})
+    overrides = channel_overrides(cfg)
+    presets = cfg.monte_carlo.presets
+    out = []
+    for k, seed in enumerate(np.random.SeedSequence(cfg.seed).spawn(n_bolts)):
+        ch_cfg = ChannelConfig.model_validate({**overrides, "preset": presets[k % len(presets)]})
+        ch = run_bolt(cfg, seed, ch_cfg).channel
+        pts, w, _ = sample_channel(ch, spacing)
+        v = pts - np.array([0.0, 0.0, 1.5])
+        out.append((np.arctan2(v[:, 0], v[:, 1]), np.arctan2(v[:, 2], np.hypot(v[:, 0], v[:, 1])), w))
+    return out
+
+
+def channel_bound(array: dict, dirs: list, draws: int = 20) -> float:
+    """CRB matched to the simulated metric: median over bolts of the length-weighted median over
+    channel points of the per-point bound sqrt(var) (deg). Random layouts average over draws."""
+    cfg = ArrayConfig.model_validate(array)
+    rng = np.random.default_rng(0)
+    vals = []
+    for _ in range(draws if cfg.layout == "random_disk" else 1):
+        p = nominal_positions(cfg, rng)
+        per_bolt = []
+        for az, el, w in dirs:
+            sd = np.degrees(np.sqrt(angular_variance(p, az, el, SIGMA_T, 343.0)))
+            order = np.argsort(sd)
+            cdf = np.cumsum(w[order]) / w.sum()
+            per_bolt.append(float(sd[order][np.searchsorted(cdf, 0.5)]))
+        vals.append(float(np.median(per_bolt)))
+    return float(np.mean(vals))
+
+
 def analyze(run_dir: Path, docs_prefix: str | None) -> None:
     table, _, cfg, meta = load_run(run_dir)
     vt = variant_table(table)
@@ -175,16 +219,22 @@ def analyze(run_dir: Path, docs_prefix: str | None) -> None:
     figs = run_dir / "figures"
     figs.mkdir(exist_ok=True)
 
+    dirs = channel_directions(int(vt["bolts"].max()))
+    variants = cfg["monte_carlo"]["variants"]
+    vt["crb_channel_deg"] = [channel_bound(variants[v]["array"], dirs) for v in vt.index]
+    vt.to_csv(run_dir / "e2_table.csv")
     design = vt[(vt["aperture_m"] == DESIGN_APERTURE) & (vt["method"] == "A")].copy()
     design = design.sort_values("crb_rms_deg")
     rho, p_rho = spearmanr(design["crb_rms_deg"], design["angular_error_median_deg"], nan_policy="omit")
+    rho_ch, p_ch = spearmanr(design["crb_channel_deg"], design["angular_error_median_deg"], nan_policy="omit")
+    k_ch = float(np.median(design["angular_error_median_deg"] / design["crb_channel_deg"]))
     rho_c, p_c = spearmanr(design["crb_rms_deg"], design["coverage_main_50m"], nan_policy="omit")
     # Implied effective timing noise: for a 2-D Gaussian direction error, median = sqrt(ln 2) * RMS.
     k = float(np.median(design["angular_error_median_deg"] / design["crb_rms_deg"]))
     sigma_eff = SIGMA_T * k / np.sqrt(np.log(2))
 
     _plot_layouts(vt, cfg, figs / "layouts.png")
-    _plot_crb_vs_sim(design, rho, figs / "crb_vs_sim.png")
+    _plot_crb_vs_sim(design, rho, rho_ch, figs / "crb_vs_sim.png")
     _plot_aperture(vt, k, figs / "aperture.png")
     _plot_mic_count(vt, k, figs / "mic_count.png")
 
@@ -198,6 +248,9 @@ def analyze(run_dir: Path, docs_prefix: str | None) -> None:
         f"rho = {rho:.2f} (p = {p_rho:.2g}); "
         f"CRB vs main-channel coverage: rho = {rho_c:.2f} (p = {p_c:.2g}).",
         f"Simulated median / CRB RMS = {k:.2f}, i.e. effective timing noise ~ {sigma_eff * 1e6:.0f} us.",
+        f"Channel-weighted bound (directions of the simulated channels; median of per-point bounds): "
+        f"rho = {rho_ch:.2f} (p = {p_ch:.2g}); simulated / bound = {k_ch:.2f}, i.e. effective timing "
+        f"noise ~ {SIGMA_T * k_ch * 1e6:.0f} us.",
         "",
         "## Layouts at the design aperture (Method A)",
         "",
@@ -224,6 +277,9 @@ def _rows(df: pd.DataFrame) -> pd.DataFrame:
             "variant": df.index,
             "mics": df["n_mics"].astype(int),
             "CRB rms (deg)": df["crb_rms_deg"].astype(float).map(lambda v: f"{v:.3f}"),
+            "CRB channel (deg)": df["crb_channel_deg"].astype(float).map(lambda v: f"{v:.3f}")
+            if "crb_channel_deg" in df
+            else "-",
             "angular error (deg)": [ci_text(r, "angular_error_median_deg", ".3f") for _, r in df.iterrows()],
             "ang ratio": [ci_text(r, "ang_ratio", ".2f") for _, r in df.iterrows()],
             "point error (m)": [ci_text(r, "point_error_median_m", ".1f") for _, r in df.iterrows()],
@@ -282,28 +338,37 @@ def _merged_labels(names, x, y) -> dict[tuple[float, float], str]:
     return out
 
 
-def _plot_crb_vs_sim(design: pd.DataFrame, rho: float, path: Path) -> None:
-    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    x = design["crb_rms_deg"].astype(float)
+def _plot_crb_vs_sim(design: pd.DataFrame, rho: float, rho_ch: float, path: Path) -> None:
+    fig, ax = plt.subplots(1, 3, figsize=(17, 5))
     y = design["angular_error_median_deg"]
     err = np.vstack([y - design["angular_error_median_deg_lo"], design["angular_error_median_deg_hi"] - y])
     colors = ["tab:red" if o else "tab:blue" for o in design["optimized"]]
-    ax[0].errorbar(x, y, yerr=err, fmt="none", ecolor="0.6", lw=1)
-    ax[0].scatter(x, y, c=colors, zorder=3)
-    for (xi, yi), name in _merged_labels(design["layout"], x, y).items():
-        ax[0].annotate(name, (xi, yi), fontsize=7, xytext=(3, 3), textcoords="offset points")
-    ax[0].set_xscale("log")
-    ax[0].set_yscale("log")
-    ax[0].set_xlabel(f"CRB RMS direction error at σt = {SIGMA_T * 1e6:.0f} µs (deg)")
-    ax[0].set_ylabel("simulated median angular error (deg)")
-    ax[0].set_title(f"Does the surrogate rank layouts? Spearman ρ = {rho:.2f}")
-    ax[1].scatter(x, design["coverage_main_50m"], c=colors)
+    panels = [
+        ("crb_rms_deg", f"CRB RMS over a uniform direction grid (deg)\nSpearman ρ = {rho:.2f}"),
+        ("crb_channel_deg", f"CRB over the simulated channels' directions (deg)\nSpearman ρ = {rho_ch:.2f}"),
+    ]
+    for a, (col, label) in zip(ax[:2], panels, strict=True):
+        x = design[col].astype(float)
+        a.errorbar(x, y, yerr=err, fmt="none", ecolor="0.6", lw=1)
+        a.scatter(x, y, c=colors, zorder=3)
+        for (xi, yi), name in _merged_labels(design["layout"], x, y).items():
+            a.annotate(name, (xi, yi), fontsize=7, xytext=(3, 3), textcoords="offset points")
+        a.set_xscale("log")
+        a.set_yscale("log")
+        a.set_xlabel(f"{label}  [σt = {SIGMA_T * 1e6:.0f} µs]")
+        a.set_ylabel("simulated median angular error (deg)")
+    x = design["crb_channel_deg"].astype(float)
+    ax[2].scatter(x, design["coverage_main_50m"], c=colors)
     for (xi, yi), name in _merged_labels(design["layout"], x, design["coverage_main_50m"]).items():
-        ax[1].annotate(name, (xi, yi), fontsize=7, xytext=(3, 3), textcoords="offset points")
-    ax[1].set_xscale("log")
-    ax[1].set_xlabel("CRB RMS direction error (deg)")
-    ax[1].set_ylabel("main-channel coverage within 50 m")
-    ax[1].set_title("Coverage is outside the surrogate")
+        ax[2].annotate(name, (xi, yi), fontsize=7, xytext=(3, 3), textcoords="offset points")
+    ax[2].set_xscale("log")
+    ax[2].set_ylim(0.5, 1.0)
+    ax[2].set_xlabel("CRB over the simulated channels' directions (deg)")
+    ax[2].set_ylabel("main-channel coverage within 50 m")
+    ax[2].set_title("Coverage is outside the surrogate")
+    fig.suptitle(
+        f"Does the surrogate rank layouts? ({DESIGN_APERTURE:g} m aperture, Method A; red: CRB-optimized)"
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
