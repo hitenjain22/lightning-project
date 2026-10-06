@@ -1,0 +1,7 @@
+# Base run config. Each milestone adds its own section (channel, synthesis, atmosphere, ...).
+experiment: base
+seed: 0
+results_root: results
+sample_rate_hz: 8000.0   # recording sample rate (SPEC.md conventions)
+oversample: 8            # internal oversampling factor for fractional delays
+description: Empty M0 pipeline; checks config loading and results-folder output.
