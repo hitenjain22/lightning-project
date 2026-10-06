@@ -346,8 +346,8 @@ def test_shadowed_source_is_silent_and_truth_is_nan():
     far = polyline([[-8000.0, 0, 100.0], [-8000.0, 0, 101.0]])
     mic = np.array([[0.0, 0.0, 1.5]])
     assert np.abs(synthesize(near, atm, mic, FS, 8, 0.5, C.ACOUSTIC_EFFICIENCY).signals).max() > 0
-    with pytest.raises(ValueError, match="shadow"):
-        synthesize(far, atm, mic, FS, 8, 0.5, C.ACOUSTIC_EFFICIENCY)
+    silent = synthesize(far, atm, mic, FS, 8, 0.5, C.ACOUSTIC_EFFICIENCY)  # all in shadow: silence
+    assert not np.any(silent.signals) and silent.signals.shape[1] / FS > 8000.0 / 350.0
     both = polyline([[-2000.0, 0, 100.0], [-2000.0, 0, 101.0], [-8000.0, 0, 101.0]])
     rec = synthesize(both, atm, mic, FS, 8, 0.5, C.ACOUSTIC_EFFICIENCY)
     assert rec.truth is not None
