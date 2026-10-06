@@ -8,3 +8,18 @@ description: Empty M0 pipeline; checks config loading and results-folder output.
 
 channel:
   preset: branched          # straight | tortuous | branched | with_incloud | multi_stroke
+
+atmosphere:
+  model: uniform
+  temperature_c: 25.0
+
+array:
+  positions_m:              # 50 m square, mics 1.5 m above ground
+    - [-25.0, -25.0, 1.5]
+    - [25.0, -25.0, 1.5]
+    - [25.0, 25.0, 1.5]
+    - [-25.0, 25.0, 1.5]
+
+synthesis:
+  emitter_spacing_m: 0.5
+  write_wav: true

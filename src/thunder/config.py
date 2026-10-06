@@ -121,6 +121,43 @@ class ChannelConfig(StrictModel):
         return (math.radians(self.branch_angle_deg[0]), math.radians(self.branch_angle_deg[1]))
 
 
+class AtmosphereConfig(StrictModel):
+    """Atmosphere used for synthesis. Phase 2: uniform still air. Phase 3 adds profiles and wind."""
+
+    model: Literal["uniform"] = "uniform"
+    temperature_c: float = 25.0  # SPEC.md Phase 3 default surface temperature
+    relative_humidity: float = Field(default=0.5, ge=0, le=1)
+    pressure_pa: float = Field(default=C.P_STANDARD, gt=0)
+
+
+def _default_mic_positions() -> list[tuple[float, float, float]]:
+    # 50 m square, centroid at the origin, mics 1.5 m above ground (SPEC.md Phase 3 default).
+    return [(-25.0, -25.0, 1.5), (25.0, -25.0, 1.5), (25.0, 25.0, 1.5), (-25.0, 25.0, 1.5)]
+
+
+class ArrayConfig(StrictModel):
+    """Microphone positions, ENU meters. Phase 4 adds layout generators and sensor flaws."""
+
+    positions_m: list[tuple[float, float, float]] = Field(
+        default_factory=_default_mic_positions, min_length=1
+    )
+
+
+class SynthesisConfig(StrictModel):
+    """Phase 2 forward model."""
+
+    emitter_spacing_m: float = Field(default=0.5, gt=0)  # finer than reconstruction ever assumes
+    # Sub-segment tortuosity (Brownian bridge inside each segment); null disables it.
+    micro_turn_mean_deg: float | None = Field(default=math.degrees(C.HILL_MEAN_TURN_ANGLE), ge=0, lt=90)
+    micro_scale_m: float = Field(default=C.MICRO_TORTUOSITY_SCALE, gt=0)
+    acoustic_efficiency: float = Field(default=C.ACOUSTIC_EFFICIENCY, gt=0, le=1)
+    write_wav: bool = True
+
+    @property
+    def micro_turn_mean(self) -> float | None:
+        return None if self.micro_turn_mean_deg is None else math.radians(self.micro_turn_mean_deg)
+
+
 class RunConfig(StrictModel):
     """Top-level run configuration."""
 
@@ -131,6 +168,9 @@ class RunConfig(StrictModel):
     oversample: int = Field(default=8, ge=1)
     description: str = ""
     channel: ChannelConfig | None = None
+    atmosphere: AtmosphereConfig = Field(default_factory=AtmosphereConfig)
+    array: ArrayConfig = Field(default_factory=ArrayConfig)
+    synthesis: SynthesisConfig | None = None
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")

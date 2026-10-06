@@ -92,6 +92,18 @@ BRANCH_LENGTH_SIGMA = 0.75
 # a handful of visible branches per flash, as in photographs.  # VERIFY
 BRANCH_PROBABILITY_PER_STEP = 0.01
 
+# --- Thunder source (Phase 2) -----------------------------------------------
+
+# Scale (m) at which sub-segment tortuosity is given Hill's mean turn angle. Assumes channel
+# tortuosity continues below Hill's tens-of-meters resolution down to ~1 m (Few 1969 argues
+# the channel is tortuous down to roughly the relaxation radius, ~1-2 m).  # VERIFY
+MICRO_TORTUOSITY_SCALE = 1.0
+
+# Fraction of the deposited channel energy that is radiated as sound. Recalled from the
+# thunder literature (Few 1969/1995) as being of order 0.1-1%.  # VERIFY
+# Only the absolute pressure level depends on it (clipping, self-noise); timing and shape do not.
+ACOUSTIC_EFFICIENCY = 0.002
+
 
 def sound_speed_dry(temperature_k: float) -> float:
     """Adiabatic sound speed in dry air (m/s) at temperature T (K): c = sqrt(gamma R T)."""

@@ -2,7 +2,7 @@
 
 This simulation framework generates synthetic lightning channels, synthesizes the thunder that a microphone array would record, and reconstructs the 3D channel from those recordings. See `SPEC.md` for the full plan.
 
-**Status:** M1 (channel generator) is done: five channel presets, statistics, and a gallery (`python scripts/make_channel_gallery.py configs/experiments/channel_gallery.yaml`). Thunder synthesis (M2) is next.
+**Status:** M2 (thunder synthesis) is done. Channels become multi-mic recordings and WAV files (`python scripts/make_synthesis_demo.py configs/experiments/synthesis_demo.yaml`). Sensors and arrays (M3) are next.
 
 ## Install
 

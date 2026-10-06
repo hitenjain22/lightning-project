@@ -13,6 +13,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from thunder.constants import R_DRY_AIR
+
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 BoolArray = NDArray[np.bool_]
@@ -89,8 +91,16 @@ class Atmosphere(abc.ABC):
         """Relative humidity (0-1) at height z."""
 
     @abc.abstractmethod
+    def pressure(self, z: FloatArray) -> FloatArray:
+        """Ambient pressure (Pa) at height z."""
+
+    @abc.abstractmethod
     def sound_speed(self, z: FloatArray) -> FloatArray:
         """Sound speed (m/s) at height z, excluding wind."""
+
+    def density(self, z: FloatArray) -> FloatArray:
+        """Air density (kg/m^3) at height z from the ideal gas law (dry air)."""
+        return self.pressure(z) / (R_DRY_AIR * self.temperature(z))
 
     @abc.abstractmethod
     def propagate(self, sources: FloatArray, receivers: FloatArray) -> ArrivalPath:
@@ -98,12 +108,19 @@ class Atmosphere(abc.ABC):
 
 
 class UniformAtmosphere(Atmosphere):
-    """Still air with constant sound speed and straight-line propagation."""
+    """Still air with constant sound speed, temperature and pressure; straight-line propagation."""
 
-    def __init__(self, sound_speed: float, temperature: float, relative_humidity: float = 0.5):
+    def __init__(
+        self,
+        sound_speed: float,
+        temperature: float,
+        relative_humidity: float = 0.5,
+        pressure: float = 101_325.0,
+    ):
         self.c = float(sound_speed)
         self.t = float(temperature)
         self.rh = float(relative_humidity)
+        self.p = float(pressure)
 
     def temperature(self, z: FloatArray) -> FloatArray:
         return np.full_like(np.asarray(z, dtype=float), self.t)
@@ -113,6 +130,9 @@ class UniformAtmosphere(Atmosphere):
 
     def relative_humidity(self, z: FloatArray) -> FloatArray:
         return np.full_like(np.asarray(z, dtype=float), self.rh)
+
+    def pressure(self, z: FloatArray) -> FloatArray:
+        return np.full_like(np.asarray(z, dtype=float), self.p)
 
     def sound_speed(self, z: FloatArray) -> FloatArray:
         return np.full_like(np.asarray(z, dtype=float), self.c)

@@ -20,6 +20,9 @@ from typing import Any
 import numpy as np
 import yaml
 
+from thunder.acoustics.audio import write_wavs
+from thunder.acoustics.synth import synthesize
+from thunder.atmosphere.profiles import build_atmosphere
 from thunder.channel.generator import generate_channel
 from thunder.channel.stats import channel_stats
 from thunder.config import RunConfig
@@ -93,6 +96,35 @@ def run_pipeline(cfg: RunConfig) -> Path:
             channel_is_incloud=ch.is_incloud,
             channel_stroke_times=ch.stroke_times,
         )
+
+        if cfg.synthesis is not None:
+            syn = cfg.synthesis
+            rec = synthesize(
+                ch,
+                build_atmosphere(cfg.atmosphere),
+                np.array(cfg.array.positions_m),
+                cfg.sample_rate_hz,
+                cfg.oversample,
+                syn.emitter_spacing_m,
+                syn.acoustic_efficiency,
+                rng,
+                syn.micro_turn_mean,
+                syn.micro_scale_m,
+            )
+            stages.append("synthesize")
+            assert rec.truth is not None
+            metrics["recording"] = {
+                "duration_s": rec.duration,
+                "peak_pa": float(np.max(np.abs(rec.signals))),
+                "rms_pa": float(np.sqrt(np.mean(rec.signals**2))),
+            }
+            arrays.update(
+                signals=rec.signals,
+                mic_positions=rec.nominal_mic_positions,
+                truth_segment_arrival_times=rec.truth.segment_arrival_times,
+            )
+            if syn.write_wav:
+                metrics["recording"]["wav_gain_per_pa"] = write_wavs(rec, run_dir / "audio")
 
     write_run_files(cfg, run_dir, metrics, arrays)
     return run_dir

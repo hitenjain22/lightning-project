@@ -1,0 +1,23 @@
+# M2 deliverable: thunder from one branched bolt ~3 km away, recorded by a 4-mic 50 m square.
+experiment: synthesis_demo
+seed: 2
+description: Waveform stack, spectrograms and WAVs for one bolt; extra WAVs at 1, 3 and 8 km.
+
+channel:
+  preset: branched
+  strike_distance_m: [3000.0, 3000.0]
+
+atmosphere:
+  model: uniform
+  temperature_c: 25.0
+
+array:
+  positions_m:
+    - [-25.0, -25.0, 1.5]
+    - [25.0, -25.0, 1.5]
+    - [25.0, 25.0, 1.5]
+    - [-25.0, 25.0, 1.5]
+
+synthesis:
+  emitter_spacing_m: 0.5
+  write_wav: true

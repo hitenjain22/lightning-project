@@ -55,7 +55,8 @@ def test_pipeline_with_channel_saves_channel(tmp_path):
     assert cfg.channel is not None
     run_dir = run_pipeline(cfg)
     metrics = json.loads((run_dir / "metrics.json").read_text())
-    assert metrics["stages"] == ["generate"]
+    assert metrics["stages"] == ["generate", "synthesize"]
+    assert len(list((run_dir / "audio").glob("*.wav"))) == 4
     assert metrics["channel"]["total_length_m"] > 1000
     with np.load(run_dir / "arrays.npz") as z:
         assert z["channel_nodes"].shape[1] == 3

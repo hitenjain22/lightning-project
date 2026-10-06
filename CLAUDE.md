@@ -5,7 +5,7 @@ Project: acoustic lightning reconstruction (simulation only). The full spec is i
 ## Working rules
 
 - Work one milestone at a time. Do not start the next until the current one's tests pass and the user approves.
-- At the start of each phase, propose the module interfaces and a short plan, then wait for approval before writing large amounts of code.
+- Design authority (user decision, 2026-10-05): make the best-judgment design decision at every step without waiting for approval: best math, most consistent results, most defensible values. Record every decision and its rationale in `docs/log.md`. Still stop and summarize at the end of each milestone.
 - Never invent physical constants silently. All constants live in `src/thunder/constants.py` with a comment naming the source; anything uncertain is marked `# VERIFY`.
 - Record every modeling assumption in `docs/assumptions.md` and every design decision in `docs/log.md`.
 - Pass a `numpy.random.Generator` explicitly everywhere; no global random state.
