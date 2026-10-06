@@ -91,6 +91,7 @@ def evaluate(
     a, b = ch.segment_endpoints()
     samples, weights, sample_seg = sample_channel(ch, cfg.truth_sample_spacing_m)
     main_w = ch.is_main[sample_seg]
+    branch_w = ~(ch.is_main | ch.is_incloud)[sample_seg]  # side branches only
     centroid = np.asarray(array_centroid, dtype=float)
     metrics: dict[str, Any] = {"n_points": int(len(points))}
     per_point: dict[str, FloatArray] = {}
@@ -99,6 +100,7 @@ def evaluate(
         for d in cfg.coverage_distances_m:
             metrics[f"coverage_{d:g}m"] = 0.0
             metrics[f"coverage_main_{d:g}m"] = 0.0
+            metrics[f"coverage_branch_{d:g}m"] = 0.0 if branch_w.any() else np.nan
         metrics.update(
             point_error_median_m=np.nan,
             point_error_p90_m=np.nan,
@@ -106,6 +108,7 @@ def evaluate(
             chamfer_m=np.nan,
             radial_error_median_m=np.nan,
             transverse_error_median_m=np.nan,
+            angular_error_median_deg=np.nan,
             strike_error_m=np.nan,
             calib_1sigma=np.nan,
             calib_2sigma=np.nan,
@@ -119,12 +122,17 @@ def evaluate(
     los /= np.maximum(np.linalg.norm(los, axis=1, keepdims=True), 1e-300)
     radial = np.einsum("ij,ij->i", vec, los)
     transverse = np.linalg.norm(vec - radial[:, None] * los, axis=1)
+    # Direction error seen from the array: transverse error over range, in degrees.
+    angular = np.degrees(np.arctan2(transverse, np.maximum(np.linalg.norm(points - centroid, axis=1), 1e-9)))
 
     d_truth, _ = cKDTree(points).query(samples)
     for d in cfg.coverage_distances_m:
         covered = d_truth <= d
         metrics[f"coverage_{d:g}m"] = float(weights[covered].sum() / weights.sum())
         metrics[f"coverage_main_{d:g}m"] = float(weights[covered & main_w].sum() / weights[main_w].sum())
+        metrics[f"coverage_branch_{d:g}m"] = (
+            float(weights[covered & branch_w].sum() / weights[branch_w].sum()) if branch_w.any() else np.nan
+        )
 
     strike = strike_estimate if strike_estimate is not None else estimate_strike_point(points)
     calib = calibration(vec, covariances)
@@ -135,6 +143,7 @@ def evaluate(
         chamfer_m=float(0.5 * (np.mean(err) + np.average(d_truth, weights=weights))),
         radial_error_median_m=float(np.median(np.abs(radial))),
         transverse_error_median_m=float(np.median(transverse)),
+        angular_error_median_deg=float(np.median(angular)),
         strike_error_m=float(np.linalg.norm((strike - true_strike_point(ch))[:2]))
         if strike is not None
         else np.nan,
@@ -146,6 +155,7 @@ def evaluate(
         "error_m": err,
         "radial_m": radial,
         "transverse_m": transverse,
+        "angular_error_deg": angular,
         "range_m": np.linalg.norm(points - centroid, axis=1),
         "true_altitude_m": nearest[:, 2],
     }

@@ -1,3 +1,4 @@
+import dataclasses
 import math
 
 import numpy as np
@@ -303,6 +304,31 @@ def test_band_power_parseval():
 
 
 # --- corruption chain ---------------------------------------------------------
+
+
+def test_absolute_background_level_matches_db_spl(bolt_recording):
+    """background_db_spl: band power over the whole recording equals the configured level, and
+    the reported SNR is the thunder-window band power over that level."""
+    clean, array = bolt_recording
+    cfg = SensorsConfig(noise={"background_db_spl": 45.0})
+    out = corrupt(clean, array, cfg, np.random.default_rng(3), sound_speed=C0)
+    noise = out.signals - clean.signals
+    band = cfg.noise.snr_band_hz
+    level = 10 * np.log10(np.mean(band_power(noise, FS, band)) / db_spl_to_pa(0.0) ** 2)
+    assert level == pytest.approx(45.0, abs=1e-6)
+    info = out.truth.extra["corruption_info"]
+    p_sig = np.mean(band_power(clean.signals[:, active_window(clean)], FS, band))
+    assert info["snr_band_db"] == pytest.approx(10 * np.log10(p_sig / db_spl_to_pa(45.0) ** 2), rel=1e-9)
+    # The level is absolute: a weaker bolt gets the same noise and a lower SNR.
+    weak = dataclasses.replace(clean, signals=0.1 * clean.signals)
+    out_w = corrupt(weak, array, cfg, np.random.default_rng(3), sound_speed=C0)
+    np.testing.assert_allclose(out_w.signals - weak.signals, noise, rtol=1e-9, atol=1e-15)
+    assert out_w.truth.extra["corruption_info"]["snr_band_db"] == pytest.approx(info["snr_band_db"] - 20.0)
+
+
+def test_background_level_options_are_exclusive():
+    with pytest.raises(ValueError, match="not both"):
+        SensorsConfig(noise={"background_snr_db": 10.0, "background_db_spl": 45.0})
 
 
 def test_all_corruptions_off_is_bit_identical(bolt_recording):

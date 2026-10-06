@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import pickle
+import re
 from pathlib import Path
 from typing import Any
 
@@ -169,11 +170,8 @@ def make_report(run_dir: Path, docs_figures: Path | None = None, prefix: str = "
     save(fig, "error_distribution")
 
     # 4. Coverage curves.
-    dists = sorted(
-        float(c.split("_")[1][:-1])
-        for c in table.columns
-        if c.startswith("coverage_") and not c.startswith("coverage_main")
-    )
+    # plain coverage columns only: coverage_<d>m (not coverage_main_* / coverage_branch_*)
+    dists = sorted(float(m.group(1)) for c in table.columns if (m := re.fullmatch(r"coverage_([0-9.]+)m", c)))
     fig, ax = plt.subplots(figsize=(7, 5))
     for preset in presets:
         t = table[table["preset"] == preset]

@@ -175,3 +175,51 @@ This is exact for wind, including the lateral drift that the common "effective s
 **Refactor.** A, B and C share `prepare`, `coarse_shifts`, `matched_pairs`, `energy_time`, `place_points` and `assemble`. Method A was bit-identical (to 1e-12 on all goldens) before the normalization fix.
 
 **M6 comparison (clean commit `43805f8`):** the same 60 realistic-atmosphere bolts as M5. With the true atmosphere, B raises all-channel coverage within 50 m from 76% to 82% and main-channel coverage from 83% to 88%, at 1.8 m vs 1.7 m median error. C equals A on this compact array, where wavefront curvature is negligible. With the mismatched atmosphere, all three methods sit at about 136 m, because unknown wind dominates. Speed per bolt: A 2.2 s, B 6.1 s, C 19.6 s. C's batched multilateration solves eigenrays for every mic on every iteration, which is the price of exact curvature in a stratified atmosphere.
+
+## M7: Experiments E2–E5 (2026-10-06)
+
+**Variant engine (common random numbers).** Each experiment is one Monte Carlo over *variants*: overrides of one base config, all run on the same bolts (`monte_carlo.variants`, recorded in the resolved config).
+- **Stage cache:** keyed by the config fields each stage depends on (channel; array + position/timing/mic errors; synthesis inputs; corruption inputs). A reconstruction-only variant reuses the recording, and a noise-only variant reuses the clean synthesis.
+- **Independent streams:** each stage draws from its own child seed, and the array builder draws layout, positions, clocks and mic tolerances from separate spawned streams. A mic-tolerance change therefore can't shift the true positions behind a cached synthesis (checked before relying on it).
+- **Bounded memory:** the cache keeps the 4 most recent recordings per stage, and variants are ordered so shared stages are adjacent. Results stream out of each bolt instead of piling up. Eviction never changes results (tested with a one-entry cache).
+- **Why:** paired comparisons (per-bolt ratios against a baseline) remove bolt-to-bolt variation, which dominates independent medians. The cache makes a 50-variant sweep cost roughly one synthesis per distinct array or atmosphere.
+- **`child_seeds`:** replaces `default_rng(seed).spawn(4)`, which advances a counter on a shared SeedSequence. Repeated calls (one per variant) would otherwise get different streams. The streams are identical to the old ones (checked), so E1–M6 results are unchanged.
+
+**E2 surrogate (Cramér–Rao bound).**
+- **Model:** a plane wave from direction (az, el) with independent arrival-time noise σt, and an unknown emission time removed by projection.
+- **Fisher information:** F = (σt c)⁻² Σ gₘgₘᵀ, where gₘ = Dᵀ(mₘ − m̄) and D = ∂u/∂(az, el).
+- **Bound on the angular error variance:** tr(W F⁻¹), with W = diag(cos² el, 1).
+- **Verified:**
+  - matches finite differences to 1e-6;
+  - for an isotropic planar array it reduces to the closed form (σt c)²/s · (1 + 1/sin² el), tested;
+  - scales as 1/aperture and as σt.
+- **Consequences:**
+  - A planar array's elevation information vanishes at the horizon.
+  - The optimal planar shape doesn't depend on aperture, so each n and criterion is optimized once at the design aperture.
+  - Layouts with the same horizontal second moment score identically: triangle, square and square + center all give 0.223° at 50 m and σt = 0.1 ms.
+
+**E2 optimizer.**
+- **Method:** differential evolution over free (x, y), plus the mast height when the layout has a mast.
+- **Aperture constraint:** a penalty during the search, then exact enforcement by rescaling.
+- **Search grid:** coarse (azimuth every 30°, elevation every 10°) during the search; the final score uses the full grid.
+- **Starting population:** seeded with regular polygons and polygon + center at four rotations.
+- **Guarantee:** the result is the best of the optimum and those parametric candidates on the full grid, so it can never lose to them (tested).
+- **First version's problems:** unseeded and on the full grid, it took 80–260 s and lost to the circle for 8 mics.
+
+**Absolute ambient noise.** `noise.background_db_spl` sets the ambient band level in dB SPL (mutually exclusive with `background_snr_db`). With a relative SNR, every bolt gets the same SNR regardless of distance, which hides the propagation loss that E5 measures. The realized band SNR is recorded per bolt (`snr_band_db`).
+
+**Realistic field kit (E2–E5):**
+- measurement mics;
+- GPS-synced clocks (1 µs);
+- surveyed positions (1–2 cm);
+- photodiode flash time (10 µs);
+- 45 dB SPL ambient (VERIFY);
+- 3 m/s wind noise.
+
+**New metrics:** angular error (transverse error over range, as seen from the array), and side-branch coverage (NaN when a channel has no branches, so branchless presets don't count as 0).
+
+**Large compact apertures fail for a physical reason, not a solver bug** (diagnosed before E2).
+- **Measured:** at 150 m aperture, only 36 of 166 windows have multilateration times that any point of the true channel explains within 2 ms. Gauss–Newton converges on 38 windows, so the optimizer finds every explainable solution. At 500 m it is 4 of 180.
+- **Cause:** a window holds sound from an extended stretch of channel, and the inter-mic delay changes along that stretch at a rate proportional to aperture/(c·R). Across large baselines the waveforms decorrelate, so pair TDOAs are mutually consistent (closure misfit 0.14 ms) but correspond to no single source.
+- **What the gates do:** C's residual gate rejects these windows correctly.
+- **Consequence:** this is exactly where the point-source CRB stops ranking layouts (E2 step 4).

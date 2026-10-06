@@ -1,0 +1,40 @@
+# E3 robustness and error budget (SPEC.md Phase 7). BASE config: scripts/e3_error_budget.py
+# varies one factor at a time from this baseline (then the top pair jointly), all on the same
+# bolts. Baseline: E2's realistic field kit, 5 mics (square + center), 50 m, still uniform air
+# known to the reconstruction. Factors: SNR, clock sync, mic positions, flash time t0, unknown
+# wind, and the assumed temperature.
+experiment: e3_error_budget
+seed: 20261003
+description: E3 error budget, one-at-a-time and pairwise factor sweeps, Method A.
+
+channel:
+  strike_distance_m: [1000.0, 3000.0]
+
+atmosphere:
+  model: uniform
+  temperature_c: 25.0
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+
+synthesis:
+  write_wav: false
+
+sensors:                       # realistic field kit (E2-E5)
+  mic: {preset: measurement}
+  timing: {preset: gps_synced}
+  position: {preset: surveyed}
+  flash_time: {preset: photodiode}
+  noise:
+    background_db_spl: 45.0    # VERIFY
+    wind_speed_mps: 3.0
+
+reconstruction:
+  method: A
+
+monte_carlo:
+  n_bolts: 30
+  presets: [tortuous, branched, with_incloud]
+  keep_points: false
+  bootstrap_samples: 1000

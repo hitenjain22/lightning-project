@@ -1,0 +1,44 @@
+# E4 method comparison (SPEC.md Phase 7). BASE config: scripts/e4_methods.py runs Methods A, B
+# and C, each with three assumed atmospheres (straight rays in uniform air at the right surface
+# temperature; mismatched stratified: right surface T, 5 K/km lapse, no wind; oracle: the true
+# atmosphere), on the same bolts across all five presets. Method D joins in M8.
+# True atmosphere as in M5/M6; sensors: the realistic field kit.
+experiment: e4_methods
+seed: 20261004
+description: E4 method comparison, A/B/C x straight/mismatched/oracle, all presets, realistic.
+
+channel:
+  strike_distance_m: [1000.0, 3000.0]
+
+atmosphere:
+  model: stratified
+  temperature_c: 25.0
+  lapse_rate_k_per_km: 6.5
+  relative_humidity: 0.5
+  wind: {speed_mps: 5.0, direction_from_deg: 270.0}
+  absorption: true
+  ground_reflection: true
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+
+synthesis:
+  write_wav: false
+
+sensors:                       # realistic field kit (E2-E5)
+  mic: {preset: measurement}
+  timing: {preset: gps_synced}
+  position: {preset: surveyed}
+  flash_time: {preset: photodiode}
+  noise:
+    background_db_spl: 45.0    # VERIFY
+    wind_speed_mps: 3.0
+
+reconstruction:
+  method: A
+
+monte_carlo:
+  n_bolts: 60
+  presets: [straight, tortuous, branched, with_incloud, multi_stroke]
+  bootstrap_samples: 1000

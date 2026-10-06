@@ -1,0 +1,40 @@
+# E2 array design (SPEC.md Phase 7). This is the BASE config: scripts/e2_array_design.py adds
+# one variant per layout x aperture x method (and the CRB-optimized layouts), all run on the
+# same bolts; the full variant list is recorded in the run's config.resolved.yaml.
+# Still, uniform air isolates geometry (the atmosphere is E3/E4's subject); sensors are the
+# realistic field kit shared by E2-E5. Reconstruction assumes the true atmosphere (oracle).
+experiment: e2_array_design
+seed: 20261002
+description: E2 array design, layout x aperture x method, realistic sensors, still air.
+
+channel:
+  strike_distance_m: [1000.0, 3000.0]
+
+atmosphere:
+  model: uniform
+  temperature_c: 25.0
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+
+synthesis:
+  write_wav: false
+
+sensors:                       # realistic field kit (E2-E5)
+  mic: {preset: measurement}   # 2 Hz-2 kHz, 24-bit, 0.2 dB / 2% tolerances
+  timing: {preset: gps_synced} # 1 us residual offsets
+  position: {preset: surveyed} # 1 cm horizontal, 2 cm vertical
+  flash_time: {preset: photodiode}  # 10 us
+  noise:
+    background_db_spl: 45.0    # VERIFY: rural ambient, 10-300 Hz band power
+    wind_speed_mps: 3.0        # wind noise at mic height
+
+reconstruction:
+  method: A
+
+monte_carlo:
+  n_bolts: 30
+  presets: [tortuous, branched, with_incloud]
+  keep_points: false
+  bootstrap_samples: 1000

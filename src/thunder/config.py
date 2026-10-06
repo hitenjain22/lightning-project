@@ -376,7 +376,10 @@ class FlashTimeConfig(StrictModel):
 class NoiseConfig(StrictModel):
     """Acoustic noise at the mics (added before the mic response)."""
 
-    background_snr_db: float | None = None  # None: no background noise
+    background_snr_db: float | None = None  # relative to the thunder (see corruption.py); None: off
+    # Alternatively an absolute ambient level: band power in snr_band_hz as dB SPL. Needed when
+    # distance should lower the SNR (E5); a relative SNR hides the propagation loss.
+    background_db_spl: float | None = None
     background_color: Literal["white", "pink", "brown"] = "pink"
     background_field: Literal["diffuse", "incoherent"] = "diffuse"
     snr_band_hz: tuple[float, float] = (10.0, 300.0)  # SPEC.md default analysis band
@@ -391,6 +394,12 @@ class NoiseConfig(StrictModel):
         if not 0 < v[0] < v[1]:
             raise ValueError(f"snr_band_hz must satisfy 0 < low < high, got {v}")
         return v
+
+    @model_validator(mode="after")
+    def _one_background_level(self) -> NoiseConfig:
+        if self.background_snr_db is not None and self.background_db_spl is not None:
+            raise ValueError("set background_snr_db or background_db_spl, not both")
+        return self
 
 
 class SensorsConfig(StrictModel):
@@ -499,6 +508,11 @@ class MonteCarloConfig(StrictModel):
     presets: list[ChannelPreset] = Field(default_factory=_default_mc_presets)
     workers: int | None = Field(default=None, ge=1)  # None = all CPU cores
     bootstrap_samples: int = Field(default=2000, ge=100)
+    # Variants: name -> overrides of this config, all run on the same bolts (stages are shared
+    # when their inputs match; see experiments/pipeline.py). Empty: one run of the config.
+    variants: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    keep_examples: bool = True  # full geometry of the first bolt of each preset (first variant)
+    keep_points: bool = True  # pooled per-point errors (large sweeps may switch this off)
 
 
 class RunConfig(StrictModel):

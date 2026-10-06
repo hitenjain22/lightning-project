@@ -132,3 +132,49 @@ def test_binned_quantiles():
     out = binned_quantiles(x, y, np.array([0.0, 1.0, 2.0, 3.0]))
     assert out["q50"][0] == pytest.approx(49.5) and out["q50"][1] == pytest.approx(1049.5)
     assert np.isnan(out["q50"][2]) and list(out["count"]) == [100, 100, 0]
+
+
+def branched_channel() -> Channel:
+    """Vertical main channel plus one 500 m side branch."""
+    main = np.linspace((1000.0, 0.0, 3000.0), (1000.0, 0.0, 0.0), 301)
+    branch = np.linspace((1000.0, 0.0, 2000.0), (1400.0, 0.0, 1700.0), 51)[1:]
+    nodes = np.vstack([main, branch])
+    seg_main = np.c_[np.arange(300), np.arange(1, 301)]
+    b0 = 301
+    seg_branch = np.vstack([[100, b0], np.c_[np.arange(b0, b0 + 49), np.arange(b0 + 1, b0 + 50)]])
+    segs = np.vstack([seg_main, seg_branch])
+    n_main, n_branch = len(seg_main), len(seg_branch)
+    return Channel(
+        nodes,
+        segs,
+        np.ones(n_main + n_branch),
+        np.r_[np.zeros(n_main, dtype=np.int64), np.ones(n_branch, dtype=np.int64)],
+        np.r_[np.ones(n_main, dtype=bool), np.zeros(n_branch, dtype=bool)],
+        np.zeros(n_main + n_branch, dtype=bool),
+        metadata={"strike_point": [1000.0, 0.0, 0.0]},
+    )
+
+
+def test_branch_coverage_counts_side_branches_only():
+    ch = branched_channel()
+    pts, _, seg = sample_channel(ch, 2.0)
+    cov = np.repeat(np.eye(3)[None], len(pts), 0)
+    m, _ = evaluate(pts[ch.is_main[seg]], cov[ch.is_main[seg]], ch, CENTROID, CFG)
+    assert m["coverage_main_50m"] == pytest.approx(1.0)
+    assert m["coverage_branch_50m"] < 0.2  # only the branch root lies within 50 m of the main channel
+    m_all, _ = evaluate(pts, cov, ch, CENTROID, CFG)
+    assert m_all["coverage_branch_50m"] == pytest.approx(1.0)
+    m_line, _ = evaluate(pts[:5], cov[:5], line_channel(), CENTROID, CFG)
+    assert np.isnan(m_line["coverage_branch_50m"])  # no side branches: undefined, not zero
+
+
+def test_angular_error_is_transverse_error_over_range():
+    ch = line_channel()
+    pts, _, _ = sample_channel(ch, 50.0)
+    pts = pts[(pts[:, 2] > 100) & (pts[:, 2] < 2900)] + [0.0, 20.0, 0.0]  # 20 m sideways
+    m, pp = evaluate(pts, np.repeat(np.eye(3)[None], len(pts), 0), ch, CENTROID, CFG)
+    rng_ = np.linalg.norm(pts - CENTROID, axis=1)
+    np.testing.assert_allclose(pp["angular_error_deg"], np.degrees(np.arctan2(pp["transverse_m"], rng_)))
+    # A sideways shift is almost entirely transverse here: about 20 m / range.
+    np.testing.assert_allclose(pp["angular_error_deg"], np.degrees(20.0 / rng_), rtol=0.01)
+    assert m["angular_error_median_deg"] == pytest.approx(np.median(pp["angular_error_deg"]))

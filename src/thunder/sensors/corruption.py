@@ -133,7 +133,12 @@ def corrupt(
     filters = [mic_filter_sos(cfg, fs, float(s)) for s in np.asarray(array.corner_scale)]
     any_filter = any(f is not None for f in filters)
     wind_speed = wind_at_mics_mps if nz.wind_from_atmosphere else nz.wind_speed_mps
-    any_noise = nz.background_snr_db is not None or wind_speed > 0 or nz.rain_db_spl is not None
+    any_noise = (
+        nz.background_snr_db is not None
+        or nz.background_db_spl is not None
+        or wind_speed > 0
+        or nz.rain_db_spl is not None
+    )
     pre = int(round(PREROLL_S * fs)) if (any_filter and any_noise) else 0
     x = clean.signals
     if any_noise or pre:
@@ -143,16 +148,23 @@ def corrupt(
     positions = array.true_positions
 
     # 1. Acoustic noise.
-    if nz.background_snr_db is not None:
+    if nz.background_snr_db is not None or nz.background_db_spl is not None:
         coh = diffuse_coherence(positions, sound_speed) if nz.background_field == "diffuse" else None
         bg = generate_field(colored_psd(f, nz.background_color), m, total, fs, bg_rng, coh)
         win = active_window(clean)
         p_sig = float(np.mean(band_power(clean.signals[:, win], fs, nz.snr_band_hz)))
-        p_bg = float(np.mean(band_power(bg[:, pre:][:, win], fs, nz.snr_band_hz)))
-        bg *= np.sqrt(p_sig / p_bg / 10 ** (nz.background_snr_db / 10))
+        if nz.background_snr_db is not None:  # relative: exact SNR over the thunder window
+            target = p_sig / 10 ** (nz.background_snr_db / 10)
+            p_bg = float(np.mean(band_power(bg[:, pre:][:, win], fs, nz.snr_band_hz)))
+        else:  # absolute ambient level, measured over the whole (stationary) recording
+            assert nz.background_db_spl is not None
+            target = db_spl_to_pa(nz.background_db_spl) ** 2
+            p_bg = float(np.mean(band_power(bg[:, pre:], fs, nz.snr_band_hz)))
+        bg *= np.sqrt(target / p_bg)
         x = x + bg
-        info["background_power_band_pa2"] = p_sig / 10 ** (nz.background_snr_db / 10)
+        info["background_power_band_pa2"] = target
         info["signal_power_band_pa2"] = p_sig
+        info["snr_band_db"] = 10 * np.log10(p_sig / target) if p_sig > 0 else float("-inf")
     if wind_speed > 0:
         p_rms = wind_rms(wind_speed, air_density)
         psd = scaled_psd(wind_psd_shape(f, wind_speed), p_rms, fs)
