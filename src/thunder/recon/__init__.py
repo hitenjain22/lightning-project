@@ -14,6 +14,7 @@ import dataclasses
 import numpy as np
 
 from thunder.config import ReconstructionConfig
+from thunder.recon.bayes import reconstruct_bayes
 from thunder.recon.multilat import reconstruct_multilateration
 from thunder.recon.postprocess import dbscan_inliers, estimate_strike_point, skeleton
 from thunder.recon.srp import reconstruct_srp
@@ -35,6 +36,8 @@ def reconstruct(
         raw = reconstruct_srp(recording, mics, atmosphere_assumed, config)
     elif config.method == "C":
         raw = reconstruct_multilateration(recording, mics, atmosphere_assumed, config)
+    elif config.method == "D":
+        raw = reconstruct_bayes(recording, mics, atmosphere_assumed, config)
     else:  # pragma: no cover - guarded by the config Literal
         raise ValueError(f"unknown method {config.method!r}")
 

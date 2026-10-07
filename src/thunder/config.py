@@ -430,7 +430,8 @@ class SynthesisConfig(StrictModel):
 class ReconstructionConfig(StrictModel):
     """Phase 5 reconstruction. Defaults were tuned on development seeds disjoint from E1."""
 
-    method: Literal["A", "B", "C"] = "A"  # plane-wave TDOA / steered response power / multilateration
+    # plane-wave TDOA / steered response power / multilateration / Bayesian (+ self-calibration)
+    method: Literal["A", "B", "C", "D"] = "A"
     # Assumed atmosphere. None = the synthesis atmosphere (an *oracle* run; labeled as such).
     atmosphere: AtmosphereConfig | None = None
     # Preprocessing
@@ -472,6 +473,26 @@ class ReconstructionConfig(StrictModel):
     # Method C (multilateration): soft-L1 scale on travel-time residuals and iteration cap
     multilat_time_scale_s: float = Field(default=1e-3, gt=0)
     multilat_max_iterations: int = Field(default=20, ge=1)
+    # Method D (Bayesian, recon/bayes.py). Noise terms are the user's *knowledge* of their
+    # hardware (as presets: GPS clocks ~1 us, surveyed positions ~2 cm, photodiode t0), not
+    # the truth. The timing floor is E2's calibrated effective timing noise (~50 us).
+    d_self_calibrate: bool = True  # estimate path-averaged sound speed and wind jointly
+    d_inference: Literal["laplace", "mcmc"] = "laplace"  # mcmc (emcee) = slow reference
+    d_sigma_timing_s: float = Field(default=5e-5, gt=0)  # floor of per-window measurement noise
+    d_sigma_clock_s: float = Field(default=1e-6, ge=0)  # per-mic clock offset std
+    d_sigma_position_m: float = Field(default=0.02, ge=0)  # per-mic position error std
+    d_sigma_t0_s: float = Field(default=1e-3, gt=0)  # prior std of the flash-time error
+    # Priors on the path-averaged medium, centered on the assumed atmosphere (VERIFY: broad,
+    # weather-scale): surface sound speed +-5 m/s (~8 K), its height gradient +-2 m/s per km,
+    # wind +-8 m/s per component, wind gradient +-2 m/s per km.
+    d_prior_c_mps: float = Field(default=5.0, gt=0)
+    d_prior_c_gradient: float = Field(default=2e-3, gt=0)  # (m/s) per m of source height
+    d_prior_wind_mps: float = Field(default=8.0, gt=0)
+    d_prior_wind_gradient: float = Field(default=2e-3, gt=0)  # (m/s) per m of source height
+    d_outlier_p: float = Field(default=1e-3, gt=0, lt=1)  # chi-square gate on window residuals
+    d_max_iterations: int = Field(default=100, ge=1)  # outer (atmosphere) evaluations
+    d_mcmc_walkers: int = Field(default=16, ge=8)
+    d_mcmc_steps: int = Field(default=1500, ge=100)
     # Post-processing
     dbscan_eps_m: float = Field(default=300.0, gt=0)
     dbscan_min_samples: int = Field(default=2, ge=1)
