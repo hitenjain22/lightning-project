@@ -1,0 +1,49 @@
+# E6 consumer-hardware feasibility (SPEC.md Phase 7): could someone do this with 4 phones?
+# BASE config for scripts/e6_consumer.py, which adds an upgrade ladder of variants on the same
+# bolts. Four phones on a square: phone mic preset (100 Hz high-pass), clocks aligned by a hand
+# clap, flash time from 30 fps video, positions from phone GPS. True atmosphere as in E4; every
+# variant assumes the standard atmosphere (right surface temperature, 6.5 K/km, no wind).
+experiment: e6_consumer
+seed: 20261006
+description: E6 consumer feasibility, 4 phones, upgrade ladder, Methods B and D.
+
+channel:
+  strike_distance_m: [1000.0, 3000.0]
+
+atmosphere:
+  model: stratified
+  temperature_c: 25.0
+  lapse_rate_k_per_km: 6.5
+  relative_humidity: 0.5
+  wind: {speed_mps: 5.0, direction_from_deg: 270.0}
+  absorption: true
+  ground_reflection: true
+
+array:
+  layout: square                 # 4 phones
+  aperture_m: 50.0
+
+synthesis:
+  write_wav: false
+
+sensors:
+  mic: {preset: phone}           # 100 Hz high-pass, 32 dB SPL self-noise, 16-bit
+  timing: {preset: hand_synced}  # ~3 ms offsets, 20 ppm drift
+  position: {preset: consumer_gps}  # ~3 m horizontal, 5 m vertical
+  flash_time: {preset: video_30fps}  # uniform within +-1/60 s
+  noise:
+    background_db_spl: 45.0      # VERIFY
+    wind_speed_mps: 3.0
+
+reconstruction:
+  method: B
+  atmosphere:                    # the standard atmosphere
+    model: stratified
+    temperature_c: 25.0
+    lapse_rate_k_per_km: 6.5
+
+monte_carlo:
+  n_bolts: 30
+  presets: [tortuous, branched, with_incloud]
+  keep_points: false
+  bootstrap_samples: 1000

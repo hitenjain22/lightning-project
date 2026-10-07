@@ -14,7 +14,7 @@ import dataclasses
 import numpy as np
 
 from thunder.config import ReconstructionConfig
-from thunder.recon.bayes import reconstruct_bayes
+from thunder.recon.bayes import reconstruct_bayes, reconstruct_bayes_storm
 from thunder.recon.multilat import reconstruct_multilateration
 from thunder.recon.postprocess import dbscan_inliers, estimate_strike_point, skeleton
 from thunder.recon.srp import reconstruct_srp
@@ -41,6 +41,26 @@ def reconstruct(
     else:  # pragma: no cover - guarded by the config Literal
         raise ValueError(f"unknown method {config.method!r}")
 
+    return postprocess(raw, config)
+
+
+def reconstruct_storm(
+    recordings: list[Recording],
+    array_nominal: FloatArray,
+    atmosphere_assumed: Atmosphere,
+    config: ReconstructionConfig,
+) -> list[Reconstruction]:
+    """Method D on several recordings that share the atmosphere (storm self-calibration)."""
+    if config.method != "D":
+        raise ValueError("storm reconstruction is Method D")
+    raws = reconstruct_bayes_storm(
+        recordings, np.asarray(array_nominal, dtype=float), atmosphere_assumed, config
+    )
+    return [postprocess(r, config) for r in raws]
+
+
+def postprocess(raw: Reconstruction, config: ReconstructionConfig) -> Reconstruction:
+    """Remove outliers (DBSCAN), build the channel skeleton and estimate the strike point."""
     keep = dbscan_inliers(raw.points, config.dbscan_eps_m, config.dbscan_min_samples)
     pts = raw.points[keep]
     return dataclasses.replace(

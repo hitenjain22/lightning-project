@@ -1,0 +1,44 @@
+# E7 self-calibration (SPEC.md Phase 7). BASE config for scripts/e7_self_calibration.py.
+# Each storm draws its own TRUE atmosphere around this template (wind speed, direction, veer
+# and lapse rate; see the script, recorded in the run's e7_design.json). Every method assumes
+# the STANDARD atmosphere below (right surface temperature, standard 6.5 K/km lapse, no
+# wind), the realistic knowledge of a field team without a radiosonde.
+experiment: e7_self_calibration
+seed: 20261007
+description: E7 self-calibration, storms of bolts, Method D vs standard atmosphere.
+
+channel:
+  strike_distance_m: [1000.0, 3000.0]
+
+atmosphere:                    # truth template (wind and lapse overridden per storm)
+  model: stratified
+  temperature_c: 25.0
+  lapse_rate_k_per_km: 6.5
+  relative_humidity: 0.5
+  wind: {speed_mps: 5.0, direction_from_deg: 270.0}
+  absorption: true
+  ground_reflection: true
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+
+synthesis:
+  write_wav: false
+
+sensors:                       # realistic field kit (E2-E7)
+  mic: {preset: measurement}
+  timing: {preset: gps_synced}
+  position: {preset: surveyed}
+  flash_time: {preset: photodiode}
+  noise:
+    background_db_spl: 45.0    # VERIFY
+    wind_speed_mps: 3.0
+
+reconstruction:
+  method: D
+  d_sigma_t0_s: 1.0e-5         # photodiode
+  atmosphere:                  # the standard atmosphere every method assumes
+    model: stratified
+    temperature_c: 25.0
+    lapse_rate_k_per_km: 6.5
