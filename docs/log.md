@@ -223,3 +223,42 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **Cause:** a window holds sound from an extended stretch of channel, and the inter-mic delay changes along that stretch at a rate proportional to aperture/(c·R). Across large baselines the waveforms decorrelate, so pair TDOAs are mutually consistent (closure misfit 0.14 ms) but correspond to no single source.
 - **What the gates do:** C's residual gate rejects these windows correctly.
 - **Consequence:** this is exactly where the point-source CRB stops ranking layouts (E2 step 4).
+
+**E2 finding → optimizer constraint: the independent-noise bound rewards stacked mics.**
+- **What happened:** the unconstrained A-optimal 5-mic mast layout put two mics 0.45 m apart. Its grid bound was 0.130° (the best 5-mic score), but in full simulation it was 2× worse than the plain mast (0.080° vs 0.043°, 30 paired bolts).
+- **Why:** the bound treats each mic's timing error as independent, so a co-located copy looks like a √2 gain. Real mics that close hear the same waveform and nearly the same noise, so their errors are correlated.
+- **Decision:** `optimize_layout` requires every pair at least `min_separation_frac` × aperture apart (3-D; default 0.2), and never returns an infeasible layout.
+- **Why 0.2:** it excludes clustering, while the 12-mic circle (spacing 0.26 × aperture) stays feasible. The constrained optimum's bound is insensitive to the value: 0.131–0.132° for 0.1–0.3, vs 0.136° for the plain mast.
+- **Provenance:** the E2 main run used the unconstrained optimizer (commit `a31e59c`); the constrained layout was verified in a follow-up run on the same bolts.
+- **The constraint was not the whole story.** The constrained optimum was still 1.72× worse than square + center, which led to the curvature finding below.
+
+**E2 finding → analysis: weight the bound by where the channel is.**
+- **What happened:** the bound averaged over a uniform direction grid ranked the 20 layouts at 50 m with Spearman ρ = 0.72. Averaged over the directions of the simulated channels (regenerated from the run's seeds; per-bolt length-weighted median of the per-point bound, then the median over bolts, which mirrors the simulated metric), it ranks them with ρ = 0.94.
+- **Why:** a planar array's bound grows as 1/sin²(elevation), so a uniform grid is dominated by near-horizon directions where few channel points are. That inflated the mast's apparent advantage.
+- **Decision:** E2 reports both. The channel-weighted bound is the recommended surrogate.
+- **Calibration:** simulated error ≈ 0.52 × bound at σt = 100 µs, i.e. about 52 µs effective timing noise (0.4 samples at 8 kHz).
+
+**E5 crash → synthesis fix: a fully shadowed channel is silence, not an error.**
+- **What happened:** the first E5 run aborted after 46 minutes on a bolt whose entire channel had no eigenray to the array. Synthesis raised `ValueError`, a leftover from M2, when that case was unreachable in uniform air.
+- **Decision:** synthesis now returns a silent recording, as long as the sound would have taken along straight lines, so sensor noise still applies. Reconstruction finds nothing, and the bolt counts with zero points and 100% shadow. Tested end to end; E5 was rerun from a clean commit.
+- **Lesson:** an experiment that probes limits must treat "nothing heard" as data. The same principle already applied to bolts with no reconstructed points (NaN errors, coverage 0).
+
+**Runtime measurement.** Wall-clock stage timings include waiting for other processes and sleep (a laptop closed during a smoke test inflated them severalfold). Reconstruction now also records process CPU time, which E2 and E4 report.
+
+**Overlapping arrivals diagnostic.**
+- **What it measures:** `arrival_s_per_km` is the length-weighted 5–95% span of the true segment arrival times at the reference mic, per km of heard channel.
+- **Why:** it tests the E5 hypothesis that coverage falls with distance because channel parts arrive together.
+- **Development bolt:** 1.9 s/km at 1 km vs 0.8 s/km at 15 km.
+
+**E2 finding: plane-wave methods carry a wavefront-curvature bias on asymmetric layouts.**
+- **Diagnosis, step by step:**
+  - The direction fit is efficient: with ideal per-mic noise it is within 3% of the bound on every layout.
+  - Measured time differences are 3–5 µs accurate on every layout.
+  - Yet point sources gave 0.10–0.30° errors on asymmetric layouts.
+  - Exact noise-free spherical arrivals reproduce those errors as pure bias, ∝ 1/R (mast 0.11°, triangle 0.19°, L-shape 0.29° at 2 km). Symmetric layouts give 0.003°, ∝ 1/R².
+- **Mechanism:** the curvature term of the arrival times is quadratic in mic position, so it biases the fitted direction through the layout's third moments. These vanish for centrally symmetric layouts and for regular n-gons with n not a multiple of 3.
+- **Method C** (absolute times, curvature modeled) removes most of it.
+- **Decision:** keep A and B far-field (assumption A39) and report the bias.
+  - `design.plane_wave_bias` computes it exactly from geometry.
+  - The E2 surrogate adds it in quadrature to the calibrated bound, √((k·bound)² + bias²), with k fit on the 13 bias-free layouts. Rank agreement: ρ = 0.98 (bound alone over channel directions: 0.94; grid bound: 0.72).
+- **Candidate for M8:** a curvature-corrected Method A. Re-fit with time differences corrected for the spherical-wave residual at the first-pass point; range is known from t0, so this costs one iteration.
