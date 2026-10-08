@@ -141,8 +141,46 @@ def run_pipeline(cfg: RunConfig) -> Path:
             recon_skeleton_edges=r.extra["skeleton_edges"],
             recon_point_error_m=res.per_point.get("error_m", np.zeros(0)),
         )
+        demo_figures(res, run_dir / "figures")
     write_run_files(cfg, run_dir, _jsonable(metrics), arrays)
     return run_dir
+
+
+def demo_figures(res: Any, fig_dir: Path) -> None:
+    """Figures of a single reconstructed bolt: a 3D view of the true channel and the
+    reconstructed points (colored by error) with the waveform at the first mic
+    (reconstruction.png), and the same 3D view as interactive HTML (reconstruction.html)."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from thunder.experiments.montecarlo import _example
+    from thunder.experiments.reports import plot_example_3d
+    from thunder.viz.plot3d import reconstruction_figure, write_html
+
+    ex = _example(res)
+    if ex is None:
+        return
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    m = res.metrics
+    title = (
+        f"{len(ex['points'])} points, median error {m.get('point_error_median_m', float('nan')):.1f} m, "
+        f"main-channel coverage (50 m) {m.get('coverage_main_50m', 0.0):.0%}"
+    )
+    fig = plt.figure(figsize=(14, 6))
+    ax = fig.add_subplot(1, 2, 1, projection="3d")
+    plot_example_3d(ax, ex, title)
+    ax2 = fig.add_subplot(1, 2, 2)
+    sig = np.asarray(ex["signals"][0])
+    ax2.plot(np.arange(len(sig)) / ex["sample_rate"], sig, lw=0.5, color="0.2")
+    ax2.set_xlabel("time since the flash (s)")
+    ax2.set_ylabel("pressure at mic 0 (Pa)")
+    ax2.set_title("recorded thunder (first mic)")
+    fig.tight_layout()
+    fig.savefig(fig_dir / "reconstruction.png", dpi=120)
+    plt.close(fig)
+    write_html(reconstruction_figure(ex, title), fig_dir / "reconstruction.html")
 
 
 def run_experiment(cfg: RunConfig) -> Path:

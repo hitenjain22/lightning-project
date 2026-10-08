@@ -4,7 +4,7 @@ seed: 0
 results_root: results
 sample_rate_hz: 8000.0   # recording sample rate (SPEC.md conventions)
 oversample: 8            # internal oversampling factor for fractional delays
-description: Empty M0 pipeline; checks config loading and results-folder output.
+description: One bolt end to end (channel, thunder, realistic sensors, Method A) - the quick demo.
 
 channel:
   preset: branched          # straight | tortuous | branched | with_incloud | multi_stroke
@@ -28,10 +28,10 @@ sensors:
   position: {preset: surveyed}        # exact | surveyed | tape | consumer_gps
   flash_time: {preset: photodiode}    # exact | photodiode | lightning_network | video_30fps
   noise:
-    background_snr_db: 20.0           # in the 10-300 Hz band over the thunder window
+    background_db_spl: 45.0           # ambient level in the 10-300 Hz band (VERIFY; E2-E7 field kit)
     background_color: pink
     wind_speed_mps: 3.0
 
 reconstruction:
-  method: A                           # plane-wave TDOA (Methods B-D arrive in M6/M8)
+  method: A                           # A plane-wave TDOA | B SRP-PHAT | C multilateration | D Bayesian
   # atmosphere: {...}                 # omit = assume the synthesis atmosphere (oracle run)

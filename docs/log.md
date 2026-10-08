@@ -262,3 +262,76 @@ This is exact for wind, including the lateral drift that the common "effective s
   - `design.plane_wave_bias` computes it exactly from geometry.
   - The E2 surrogate adds it in quadrature to the calibrated bound, √((k·bound)² + bias²), with k fit on the 13 bias-free layouts. Rank agreement: ρ = 0.98 (bound alone over channel directions: 0.94; grid bound: 0.72).
 - **Candidate for M8:** a curvature-corrected Method A. Re-fit with time differences corrected for the spherical-wave residual at the first-pass point; range is known from t0, so this costs one iteration.
+
+## M8: Method D, uncertainty calibration, E6 and E7 (2026-10-07)
+
+**Method D design.**
+- **Likelihood:** each window has per-mic travel times. The covariance is a·I + b·11ᵀ:
+  - a: independent per-mic terms (measurement noise from the window's own pair misfit with a 50 µs floor, plus clock, plus position/c);
+  - b: terms common to the window (the window's time spread, plus the flash-time error when it isn't estimated).
+- **Why these terms:** they are the SPEC's noise terms, expressed as the user's *knowledge* of their hardware.
+- **The 50 µs floor:** E2's calibrated effective timing noise.
+
+**Self-calibration model: an effective moving medium.**
+- **Model:** straight rays, c(h) = c0 + c1·h and w(h) = w0 + w1·h, *path-averaged* over source height h. Closed-form travel time with analytic derivatives (tested exact to 10⁻⁸ against finite differences).
+- **Why not ray-trace candidate atmospheres:** that would cost one full eigenray solve per mic, per window, per parameter, per iteration.
+- **Adequacy:** with the parameters fitted to the true stratified atmosphere it gives 1.4 m (still air) and 7.7 m (6 m/s wind) on a development bolt, against 160 m assuming still air. The approximation is not the bottleneck.
+
+**Inference: variable projection.** Three solvers were tried before this one.
+1. **Hand-written joint Levenberg–Marquardt with a Schur complement:** zig-zagged in the flat, ill-conditioned valley and stalled (some trials at 200+ iterations, or at the wrong optimum).
+2. **scipy trust region, sparse LSMR inner solver:** stalled just above the optimum.
+3. **scipy trust region, dense exact solves:** correct (matches an independent least-squares fit to 3 decimals) but 40 s for 300 windows.
+4. **Chosen, variable projection:**
+   - **Structure:** given the medium, windows separate into 3-parameter problems (solved vectorized). The outer problem has 6 + G parameters (one dt0 per recording) with the exactly projected Jacobian.
+   - **Accuracy:** 6/6 trials at the exact optimum.
+   - **Speed:** 2.7 s for 300 windows.
+   - **Multi-start:** windows that fit badly are re-solved from their original start. Windows pushed to the horizon while the medium was far off (cos el = c·|s_h| > 1) otherwise stay stuck after it improves.
+
+**Calibration gate.**
+- **Test:** synthetic observations drawn from the likelihood, with the medium drawn from the prior (a Bayesian consistency check, 25–30 trials).
+
+| Case | 1σ / 2σ / 3σ coverage | Medium z-scores |
+| --- | --- | --- |
+| Fixed atmosphere, flat array | 0.191 / 0.749 / 0.974 | — |
+| Self-calibrating, mast array | 0.204 / 0.742 / 0.974 | 0.9–1.1 |
+| Self-calibrating, flat array (documented limitation, slow test) | 0.21 / 0.75 / 0.91 | 0.8–1.3 |
+| Nominal | 0.199 / 0.739 / 0.971 | 1 |
+
+- **Diagnosis of the flat-array case:**
+  - **Mechanism:** a flat array measures horizontal slowness only, and elevation follows from cos(el) = c·|s_h|, which is extremely steep near the horizon. A profile likelihood in c confirmed a one-sided, non-Gaussian posterior.
+  - **Rejected fixes:**
+    - Nested MCMC over the medium: far too slow, minutes per trial.
+    - Importance sampling from the Laplace proposal: weight degeneracy, because near-horizon windows make the Laplace-integrated likelihood itself unreliable.
+  - **Decision:** Laplace, with this limitation documented.
+- **Earlier failure:** the first gate run (0.07 / 0.26 / 0.46) was an unconverged solver, not the method. Converged fits are what the table reports.
+
+**Single-bolt vs storm self-calibration.**
+- **Single bolt:** sound from one bolt reaches the array over a narrow range of azimuths. Only the wind component along the line of sight changes anything measurable (through the speed of sound along the ray and wavefront curvature). A cross-wind shifts every apparent source sideways in proportion to its travel time, which looks exactly like a different channel.
+- **Consequence:** single-bolt self-calibration recovers the sound-speed profile (lapse within about 0.1 m/s per km on the development bolt) but leaves the cross-wind at its prior, with honest uncertainty. In still air with a correct prior it drifts by about 1 m/s within a ±6 m/s posterior, which costs about 20 m sideways, and the error bars cover it (2σ coverage 0.98).
+- **Storm self-calibration (new):** several recordings share the medium, each with its own dt0. Bolts at other azimuths see the cross-wind along their line of sight.
+  - **Development storm** (4 bolts at 0, 90, 180 and 270°, 6 m/s wind, still-air prior): 13–24 m error vs 80–98 m per bolt and 82–317 m with still air assumed. Recovered wind (9.6, 3.2) m/s vs true path-averaged (8.5, 3.1).
+  - **Requirement:** azimuth diversity, not just bolt count. In an E7 smoke storm with bolts at 90, 150 and 156°, the objective at the found and the true wind differed by less than 0.2%: the data cannot tell them apart. E7 reports the wind error against the azimuth range.
+
+**Fixed-atmosphere Method D:** windows are independent, so there's no outer solve. The flash-time error goes into each window's covariance, and the speed is close to Method C's.
+
+**Experiment pitfall (E6), fixed before the run.**
+- **Problem:** variant overrides that give only a preset name (`{"position": {"preset": "tape"}}`) are merged into a resolved config whose fields are all explicit. The preset only fills missing fields, so the base's values survived. Tape positions and the field kit silently equaled the phones.
+- **Fix:** overrides are now built from the config classes, with every field set.
+- **Earlier experiments:** E2–E5 always set explicit values, so they were not affected (checked).
+
+**Array self-calibration (E7 isolation, then fix).**
+- **Diagnosis:** the first E7 run had storm self-calibration failing on realistic recordings. Isolation on one calm storm (true wind 1 m/s) showed that mic position errors *alone*, at survey grade (1–2 cm, about 60 µs), invent several m/s of wind and turn 6–15 m into 94–159 m.
+- **Mechanism:** these errors are the same in every window. Treated as independent noise, they look like signal once pooled, and the shared medium absorbs them.
+- **Decision:** when self-calibrating, per-mic clock offsets and 3-D position offsets are parameters, with priors from the stated hardware accuracy, and they are removed from the per-window noise.
+- **Synthetic test:** recovers 2 cm offsets and the wind.
+- **E7 rerun (commit `f581407`):**
+  - error-bar coverage 0.40 / 0.73 / 0.86 (was 0.16 / 0.40 / 0.63); medium z-scores 1.0–1.2;
+  - calm storms are no longer damaged (35 → 62 m, was 35 → 170 m);
+  - windy storms gain little (225 → 209 m, was 225 → 104 m).
+- **Why the windy gain shrank:** mic offsets and the wind both shift arrival times in direction-dependent ways, so they share the signal. With honest priors, a few realistic bolts can't separate them.
+- **Conclusion recorded:** self-calibration recovers the sound-speed profile and gives honest uncertainty, but not the wind. Independent wind information (anemometer, sounding) is the practical route to the oracle's 3 m.
+
+**Experiment logistics.** E7's first run took 4 h (16 CPU-hours).
+- **Cost driver:** fixed-atmosphere Method D, with ray tracing to a 10 m mast mic about 5× slower than to ground mics.
+- **Rerun:** the array-calibration rerun used the flat array only (75 min).
+- **Mast results:** they come from the first run.

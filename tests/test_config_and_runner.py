@@ -59,6 +59,8 @@ def test_pipeline_with_channel_saves_channel(tmp_path):
     assert metrics["evaluation"]["n_points"] > 0 and metrics["evaluation"]["oracle_atmosphere"] is True
     assert "t0_error_s" in metrics["sensors"] and "background_power_band_pa2" in metrics["sensors"]
     assert len(list((run_dir / "audio").glob("*.wav"))) == 5
+    for name in ("reconstruction.png", "reconstruction.html"):  # the quick-demo figures
+        assert (run_dir / "figures" / name).stat().st_size > 1000, name
     assert metrics["channel"]["total_length_m"] > 1000
     with np.load(run_dir / "arrays.npz") as z:
         assert z["channel_nodes"].shape[1] == 3
