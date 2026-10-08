@@ -381,3 +381,22 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **Deep links:** `#step=N&t=T` opens a step paused at a time (`&side=1` on the last step). Used for headless screenshot checks at desktop and phone widths.
 - **Decision: keep the GitHub repo and add Pages,** rather than deleting it and making a new one. Deleting is irreversible and loses history, stars and links; Pages gives the site a URL from the same repo.
 
+## Website v2: a library of strikes (2026-10-08)
+
+**Request:** a Generate button that shows a different bolt each time, rebuilt from its sound; a site about many strikes, not one; more contrast, life and immersion.
+
+**Decision: a pre-computed library, not in-browser simulation.** The pipeline takes about 75 CPU-seconds per strike (ray-traced synthesis of ~20,000 sources plus Method B) and depends on NumPy/SciPy. Re-implementing it in JavaScript would make a second, unvalidated model, and Pyodide would mean a large download and minutes per strike. So `scripts/make_viewer_data.py` runs the real pipeline for 60 strikes (about 40 minutes on 7 cores); *Generate* draws from them without repeats until all have been shown. The page says the strikes are simulated, and the number in the library is shown on the button.
+- **Variety:** strike 0 is the README hero (media config, seed 3). Strikes 1–59 draw, from a fixed library seed: channel type (branched 55%, with an in-cloud section 30%, unbranched 15%; multi-stroke flashes left out because the page shows one return stroke), distance log-uniform 1.5–6 km, any direction, wind 0–8 m/s from any direction, ground temperature 15–32 °C. Lapse rate, humidity, sensors and array are the realistic E4 setup.
+- **Reconstruction:** Method B with the true atmosphere (E4's best row), labelled "oracle" on the page; the result step repeats the unknown-wind finding (about 130 m).
+- **No selection:** every generated strike is published. All 60 were reconstructed: median error per strike 2.6–9.2 m, median of medians 4.0 m, median main-channel coverage 83%, 11,445 points. These sit slightly above E4's B/oracle 3.3 m because the library spans 1.5–6 km (E4: 1–3 km) and includes in-cloud strikes.
+- **Audio:** each recording as a 16 kHz MP3 (about 55 kB) instead of WAV; the library is 8.7 MB in total, loaded one strike at a time (all 60 only for the storm view).
+- **Bug caught by the new test:** in 2 of 60 strikes Method B's points were not in time order (up to three sources per window). The page plays points in array order, so the exporter now sorts them by window time; the two files were re-sorted in place rather than regenerated (same transformation).
+
+**Presentation choices (illustrative, labelled as such where it matters):**
+- **Leader and flash:** the channel is revealed in order of path length from its origin in the cloud (exported per segment as `leader_m`), slowed from tens of milliseconds to 1.6 s, then a return-stroke flash lights the sky, clouds and ground. The timing is not physical; the geometry is the simulated channel.
+- **Cloud deck** drawn at the channel top so the whole channel stays visible; the page notes that real cloud bases are lower.
+- **Colours:** truth in blue/violet, "being heard now" in green (exact ray-traced arrival times), the reconstruction in warm colours from white-gold (0 m) to crimson (15 m+), so truth and reconstruction never share a hue.
+- **Framing:** the camera fits the bounding sphere of the strike and the array to the screen area the panels leave free.
+- **Colour-space bug fixed during review:** colours written as sRGB numbers were treated as linear, lifting the night sky to grey; the sky shader and ground now convert explicitly.
+- **Clock:** animation uses `performance.now()`, not the requestAnimationFrame timestamp, which some browsers report on a different timebase (the intro never played in headless Chrome).
+

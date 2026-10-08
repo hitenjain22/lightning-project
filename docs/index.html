@@ -4,93 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lightning from Thunder</title>
-<meta name="description" content="An interactive 3D simulation: a lightning strike, its thunder, and the reconstruction of the channel from sound alone.">
-<style>
-  :root {
-    --bg: #05070d;
-    --panel: rgba(12, 17, 30, 0.86);
-    --panel-border: rgba(140, 170, 230, 0.18);
-    --text: #e7ecf6;
-    --muted: #9aa6bd;
-    --accent: #ffcc55;
-    --main: #8fb8ff;
-    --branch: #a9bedf;
-    --incloud: #ff8a7a;
-    --good: #67e3a1;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
-  #scene { position: fixed; inset: 0; }
-  #scene canvas { display: block; }
-  header { position: fixed; top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between;
-    align-items: flex-start; pointer-events: none; z-index: 2; }
-  header h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: 0.2px; }
-  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
-  header nav { pointer-events: auto; display: flex; gap: 10px; font-size: 13px; }
-  header nav a { color: var(--muted); text-decoration: none; border: 1px solid var(--panel-border);
-    padding: 5px 10px; border-radius: 999px; background: var(--panel); }
-  header nav a:hover { color: var(--text); }
-  #panel { position: fixed; left: 16px; top: 84px; width: 380px; max-height: calc(100% - 210px); overflow-y: auto;
-    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 18px 18px 14px;
-    backdrop-filter: blur(6px); z-index: 2; }
-  #panel .act { color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; }
-  #panel h2 { margin: 4px 0 10px; font-size: 19px; line-height: 1.3; }
-  #panel p { margin: 0 0 10px; color: #cfd7e6; }
-  #panel ul { margin: 0 0 10px; padding-left: 18px; color: #cfd7e6; }
-  #panel li { margin-bottom: 4px; }
-  #panel .fact { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0 12px; font-size: 13.5px; }
-  #panel .fact b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-  #panel .fact span { color: var(--muted); }
-  #panel .note { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--panel-border); padding-left: 10px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 4px; }
-  button { font: inherit; font-size: 14px; color: var(--text); background: rgba(255,255,255,0.06);
-    border: 1px solid var(--panel-border); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
-  button:hover { background: rgba(255,255,255,0.12); }
-  button.primary { background: var(--accent); color: #1a1406; border-color: transparent; font-weight: 650; }
-  button.primary:hover { filter: brightness(1.08); }
-  button[aria-pressed="true"] { background: rgba(143,184,255,0.22); border-color: rgba(143,184,255,0.6); }
-  button:disabled { opacity: 0.4; cursor: default; }
-  #nav { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 12px;
-    border-top: 1px solid var(--panel-border); }
-  #dots { display: flex; gap: 6px; }
-  #dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.18); }
-  #dots i.on { background: var(--accent); }
-  #legend { position: fixed; right: 16px; top: 84px; background: var(--panel); border: 1px solid var(--panel-border);
-    border-radius: 12px; padding: 10px 12px; font-size: 12.5px; z-index: 2; min-width: 190px; }
-  #legend div { display: flex; align-items: center; gap: 8px; margin: 3px 0; color: #cfd7e6; }
-  #legend .sw { width: 18px; height: 3px; border-radius: 2px; }
-  #legend .dot { width: 9px; height: 9px; border-radius: 50%; }
-  #legend .bar { width: 100%; height: 8px; border-radius: 4px; margin-top: 4px;
-    background: linear-gradient(90deg, #fde725, #5ec962, #21918c, #3b528b, #440154); }
-  #legend .scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
-  #bottom { position: fixed; left: 412px; right: 16px; bottom: 16px; background: var(--panel); border: 1px solid var(--panel-border);
-    border-radius: 12px; padding: 8px 12px 10px; z-index: 2; }
-  #bottom .top { display: flex; justify-content: space-between; color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
-  #wave { width: 100%; height: 64px; display: block; cursor: pointer; }
-  #hint { position: fixed; right: 16px; bottom: 120px; color: var(--muted); font-size: 12px; z-index: 2; }
-  .live { font-variant-numeric: tabular-nums; color: var(--text); }
-  .hidden { display: none !important; }
-  #collapse { display: none; float: right; padding: 2px 10px; font-size: 12px; }
-  #panel.collapsed #step > :not(.act):not(h2) { display: none; }
-  #panel.collapsed #step h2 { margin-bottom: 0; }
-  @media (max-width: 820px) {
-    header h1 { font-size: 16px; }
-    header p { display: none; }
-    header { left: 12px; right: 12px; top: 12px; }
-    header nav { gap: 6px; }
-    header nav a { padding: 4px 9px; }
-    #legend { display: none; }
-    #panel { left: 8px; right: 8px; width: auto; top: auto; bottom: 100px; max-height: 44%; padding: 14px; font-size: 14px; }
-    #bottom { padding: 6px 10px 8px; }
-    #wave-label { display: none; }
-    #wave { height: 48px; }
-    #collapse { display: inline-block; }
-    #panel h2 { font-size: 17px; }
-    #bottom { left: 8px; right: 8px; bottom: 8px; }
-    #hint { display: none; }
-  }
-</style>
+<meta name="description" content="Interactive 3D: simulated lightning strikes, their thunder, and each channel rebuilt in 3D from sound alone.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;650;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="viewer/style.css">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -100,18 +18,31 @@
 </head>
 <body>
 <div id="scene"></div>
-<header>
-  <div>
-    <h1>Lightning from Thunder</h1>
-    <p>A simulated strike, its thunder, and the 3D channel rebuilt from sound alone</p>
+<div id="flash"></div>
+<div id="loading">Loading the storm…</div>
+
+<header id="top">
+  <div class="brand">
+    <svg width="22" height="26" viewBox="0 0 22 26" aria-hidden="true"><path d="M13 0 2 15h7l-2 11 13-16h-8l3-10z" fill="#ffc94a"/></svg>
+    <div>
+      <h1>Lightning from Thunder</h1>
+      <p>Simulated strikes, their thunder, and each channel rebuilt in 3D from sound alone</p>
+    </div>
   </div>
-  <nav>
-    <a href="https://github.com/hitenjain22/lightning-project" target="_blank" rel="noopener">Code</a>
-    <a href="https://github.com/hitenjain22/lightning-project/blob/main/docs/report.md" target="_blank" rel="noopener">Report</a>
-  </nav>
+  <div class="actions">
+    <button id="gen" class="gold big" title="Show a different simulated strike">
+      <svg width="14" height="16" viewBox="0 0 22 26" aria-hidden="true"><path d="M13 0 2 15h7l-2 11 13-16h-8l3-10z" fill="currentColor"/></svg>
+      <span>Generate strike</span>
+    </button>
+    <button id="storm" class="ghost" title="Every strike in the library at once"><span class="wide">All</span> <span id="storm-n"></span> strikes</button>
+    <nav class="links">
+      <a href="https://github.com/hitenjain22/lightning-project" target="_blank" rel="noopener">Code</a>
+      <a href="https://github.com/hitenjain22/lightning-project/blob/main/docs/report.md" target="_blank" rel="noopener">Report</a>
+    </nav>
+  </div>
 </header>
 
-<section id="panel" aria-live="polite">
+<section id="panel" class="card" aria-live="polite">
   <div id="step"></div>
   <div id="nav">
     <button id="prev">Back</button>
@@ -120,558 +51,39 @@
   </div>
 </section>
 
-<aside id="legend">
-  <div><span class="sw" style="background:var(--main)"></span>true main channel</div>
-  <div><span class="sw" style="background:var(--branch)"></span>true branches</div>
-  <div id="lg-incloud"><span class="sw" style="background:var(--incloud)"></span>true in-cloud section</div>
-  <div><span class="sw" style="background:var(--accent)"></span>sound arriving now</div>
-  <div><span class="dot" style="background:#fff"></span>microphone array</div>
-  <div id="lg-points" class="hidden" style="display:block">
-    <div style="margin:6px 0 0">reconstructed point error (m)</div>
-    <div class="bar"></div>
-    <div class="scale"><span>0</span><span>5</span><span>10</span><span>15+</span></div>
+<aside id="hud" class="card">
+  <div class="head"><span id="hud-kicker">Strike</span><em id="hud-id"></em></div>
+  <h3 id="hud-title"></h3>
+  <dl class="facts" id="hud-facts"></dl>
+  <div class="legend">
+    <div><span class="sw" style="color:var(--blue);background:var(--blue)"></span>true channel (simulation)</div>
+    <div><span class="sw" style="color:var(--mint);background:var(--mint)"></span>its sound reaching the mics now</div>
+    <div><span class="dot" style="background:#fff;box-shadow:0 0 6px #fff"></span>5 microphones</div>
+    <div><span class="dot" style="background:var(--warm1);box-shadow:0 0 6px var(--warm1)"></span>rebuilt from sound, by error:</div>
+    <div style="display:block">
+      <div class="bar"></div>
+      <div class="scale"><span>0 m</span><span>5</span><span>10</span><span>15+ m</span></div>
+    </div>
   </div>
 </aside>
 
-<div id="hint">Drag to rotate · scroll or pinch to zoom · right-drag to pan</div>
+<div id="phase"></div>
+<div id="hint">Drag to rotate · scroll to zoom · right-drag to pan</div>
 
-<section id="bottom">
-  <div class="top"><span id="wave-label">Recorded thunder at the reference microphone</span><span>t = <span id="tlabel" class="live">0.0</span> s after the flash</span></div>
-  <canvas id="wave"></canvas>
+<section id="player" class="card">
+  <div class="bar">
+    <button id="play" aria-label="Play"></button>
+    <div class="seg" id="speeds">
+      <button data-speed="0.5">0.5×</button><button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
+    </div>
+    <button id="sound" aria-pressed="true" title="Thunder audio">Sound</button>
+    <span class="grow"></span>
+    <span class="time"><span class="long">recorded thunder · </span><b id="tlabel">0.0</b> s after the flash</span>
+  </div>
+  <canvas id="wave" aria-label="Recorded thunder waveform; click to jump in time"></canvas>
 </section>
 
-<audio id="audio" src="viewer/thunder.wav" preload="auto"></audio>
-
-<script type="module">
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
-import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import { LineMaterial } from "three/addons/lines/LineMaterial.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-
-const D = await (await fetch("viewer/bolt.json")).json();
-const KM = 1 / 1000;                       // scene units: kilometres
-const C = D.about.sound_speed_mps;          // display speed of sound for the wavefronts
-
-// ---------- scene ----------
-const host = document.getElementById("scene");
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-host.appendChild(renderer.domElement);
-const labels = new CSS2DRenderer();
-labels.setSize(innerWidth, innerHeight);
-Object.assign(labels.domElement.style, { position: "absolute", top: "0", pointerEvents: "none" });
-host.appendChild(labels.domElement);
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05070d);
-scene.fog = new THREE.FogExp2(0x05070d, 0.035);
-
-// Channel coordinates: x east, y north, z up (metres) -> three.js: x east, y up, z south.
-const toV = (p) => new THREE.Vector3(p[0] * KM, p[2] * KM, -p[1] * KM);
-const nodes = D.channel.nodes.map(toV);
-const segs = D.channel.segments;
-const kind = D.channel.kind;
-const arrival = D.channel.arrival_s;
-
-const box = new THREE.Box3().setFromPoints(nodes);
-const center = box.getCenter(new THREE.Vector3());
-const mics = D.mics.map(toV);
-const array = mics.reduce((a, b) => a.add(b.clone()), new THREE.Vector3()).multiplyScalar(1 / mics.length);
-
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-const focus = new THREE.Vector3((center.x + array.x) / 2, box.max.y * 0.4, (center.z + array.z) / 2);
-controls.target.copy(focus);
-const span = Math.max(box.max.y, array.distanceTo(new THREE.Vector3(center.x, 0, center.z)));
-// Look side-on to the line from the array to the strike, slightly from above and behind the array.
-const along = new THREE.Vector3(center.x - array.x, 0, center.z - array.z).normalize();
-const side = new THREE.Vector3(-along.z, 0, along.x);
-camera.position.copy(focus).addScaledVector(side, span * 1.75).addScaledVector(along, -span * 0.4);
-camera.position.y = focus.y + span * 0.25;
-const home = { pos: camera.position.clone(), target: focus.clone() };
-// On wide screens the story panel covers the left; shift the projection so the scene sits right of it.
-function frame() {
-  const w = innerWidth, h = innerHeight;
-  camera.aspect = w / h;
-  // Wide screens: the story panel covers the left, so shift the scene right of it. Narrow screens:
-  // the panel covers the bottom half, so shift the scene up and pull back to fit the bolt.
-  if (w > 820) camera.setViewOffset(w, h, -200, 0, w, h); else camera.setViewOffset(w, h, 0, 0.24 * h, w, h);
-  camera.fov = w > 820 ? 45 : 62;
-  camera.updateProjectionMatrix();
-}
-frame();
-if (innerWidth <= 820) camera.position.sub(focus).multiplyScalar(1.6).add(focus);  // portrait: fit the whole bolt
-controls.update();
-
-// Ground and a 1 km grid around the strike and the array.
-const groundSize = Math.ceil(Math.max(box.max.x - box.min.x, box.max.z - box.min.z, span) * 2 + 4);
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize),
-  new THREE.MeshBasicMaterial({ color: 0x0a0f19 }));
-ground.rotation.x = -Math.PI / 2;
-ground.position.set(focus.x, -0.002, focus.z);
-scene.add(ground);
-const grid = new THREE.GridHelper(groundSize, groundSize, 0x1c2840, 0x121a2b);
-grid.position.set(focus.x, 0, focus.z);
-scene.add(grid);
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.5, 0.18);
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
-
-// ---------- the true channel ----------
-const COLORS = [new THREE.Color(0x8fb8ff), new THREE.Color(0xa9bedf), new THREE.Color(0xff8a7a)];
-const WHITE = new THREE.Color(0xffffff), AMBER = new THREE.Color(0xffcc55);
-const segPos = new Float32Array(segs.length * 6);
-const segCol = new Float32Array(segs.length * 6);
-segs.forEach(([a, b], i) => {
-  nodes[a].toArray(segPos, i * 6); nodes[b].toArray(segPos, i * 6 + 3);
-});
-const chanGeom2 = new LineSegmentsGeometry().setPositions(segPos).setColors(segCol);
-const chanMat = new LineMaterial({ vertexColors: true, linewidth: 2.2, resolution: new THREE.Vector2(innerWidth, innerHeight) });
-const channel = new LineSegments2(chanGeom2, chanMat);
-const colStart = chanGeom2.attributes.instanceColorStart.data;  // shared interleaved start/end colours
-scene.add(channel);
-if (!kind.includes(2)) document.getElementById("lg-incloud").classList.add("hidden");
-
-// Per-segment display state: base colour, flash (white), highlight (amber, "sound arriving now").
-const flash = new Float32Array(segs.length);
-const glow = new Float32Array(segs.length);
-let truthOpacity = 1;
-function paintChannel() {
-  const c = new THREE.Color();
-  for (let i = 0; i < segs.length; i++) {
-    c.copy(COLORS[kind[i]]).multiplyScalar(truthOpacity);
-    if (glow[i] > 0) c.lerp(AMBER, Math.min(glow[i], 1));
-    if (flash[i] > 0) c.lerp(WHITE, Math.min(flash[i], 1));
-    c.toArray(segCol, i * 6); c.toArray(segCol, i * 6 + 3);
-  }
-  colStart.array.set(segCol); colStart.needsUpdate = true;
-}
-paintChannel();
-
-// ---------- microphones ----------
-const dotTex = (() => {
-  const c = document.createElement("canvas"); c.width = c.height = 64;
-  const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(0.45, "rgba(255,255,255,1)"); r.addColorStop(0.6, "rgba(255,255,255,0.35)"); r.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = r; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c);
-})();
-const micMat = new THREE.SpriteMaterial({ map: dotTex, color: 0xffffff, sizeAttenuation: false, depthTest: false, transparent: true });
-const micSprites = mics.map((p) => {
-  const s = new THREE.Sprite(micMat.clone());
-  s.position.copy(p); s.scale.set(0.009, 0.009, 1); s.renderOrder = 10;
-  scene.add(s); return s;
-});
-function label(text, pos, cls = "") {
-  const el = document.createElement("div");
-  el.textContent = text;
-  el.style.cssText = "color:#e7ecf6;font-size:12px;background:rgba(12,17,30,.75);padding:2px 7px;border-radius:999px;border:1px solid rgba(140,170,230,.25);white-space:nowrap" + cls;
-  const o = new CSS2DObject(el); o.position.copy(pos); scene.add(o); return o;
-}
-label("5 microphones (50 m array)", array.clone().add(new THREE.Vector3(0, 0.35, 0)));
-label("strike point", toV(D.channel.strike).add(new THREE.Vector3(0, -0.15, 0)));
-label(`${(D.channel.nodes[0][2] / 1000).toFixed(1)} km up`, nodes[0].clone().add(new THREE.Vector3(0, 0.25, 0)));
-
-// ---------- reconstructed points ----------
-const P = D.points;
-const nPts = P.t.length;
-const ptVec = P.xyz.map(toV);
-const viridis = ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"].map((h) => new THREE.Color(h));
-function errColor(e) {
-  const x = (1 - Math.min(Math.max(e / 15, 0), 1)) * 4, i = Math.min(Math.floor(x), 3);  // low error = bright
-  return viridis[i].clone().lerp(viridis[i + 1], x - i);
-}
-// Points are time-ordered, so "points placed so far" is a draw range. Fixed pixel size keeps them
-// readable at any zoom; the newest few are drawn again, larger, as a short "pop".
-const ptGeom = new THREE.BufferGeometry().setFromPoints(ptVec);
-ptGeom.setAttribute("color", new THREE.Float32BufferAttribute(P.error_m.flatMap((e) => errColor(e).toArray()), 3));
-const ptMat = (size) => new THREE.PointsMaterial({ size, map: dotTex, vertexColors: true, sizeAttenuation: false,
-  transparent: true, depthWrite: false, alphaTest: 0.05 });
-const points = new THREE.Points(ptGeom, ptMat(9));
-const newestGeom = ptGeom.clone();  // same points, its own draw range
-const newest = new THREE.Points(newestGeom, ptMat(22));
-const reconGroup = new THREE.Group();
-const sideOffset = along.clone().multiplyScalar(-(0.8 * Math.hypot(box.max.x - box.min.x, box.max.z - box.min.z) + 0.8));
-scene.add(reconGroup);
-reconGroup.add(points);
-points.add(newest);  // hidden together with the points
-newestGeom.setDrawRange(0, 0);
-const countUpTo = (t) => { let k = 0; while (k < nPts && P.t[k] <= t) k++; return k; };
-function setPointsVisible(upToT) {
-  const k = countUpTo(upToT);
-  points.geometry.setDrawRange(0, k);
-  const j = countUpTo(upToT - 0.25 * Math.max(speed, 1));
-  newest.visible = k > j;
-  newestGeom.setDrawRange(j, k - j);
-}
-
-// Uncertainty: 2-sigma bars along each axis (toggle).
-const sigGeom = new THREE.BufferGeometry();
-{
-  const a = [];
-  P.sigma_m.forEach((s, i) => {
-    const p = ptVec[i];
-    const d = [[2 * s[0] * KM, 0, 0], [0, 2 * s[2] * KM, 0], [0, 0, 2 * s[1] * KM]];
-    d.forEach(([dx, dy, dz]) => a.push(p.x - dx, p.y - dy, p.z - dz, p.x + dx, p.y + dy, p.z + dz));
-  });
-  sigGeom.setAttribute("position", new THREE.Float32BufferAttribute(a, 3));
-}
-const sigma = new THREE.LineSegments(sigGeom, new THREE.LineBasicMaterial({ color: 0xbfc8da, transparent: true, opacity: 0.55 }));
-sigma.visible = false;
-reconGroup.add(sigma);
-
-// Rays from the array to the newest points.
-const RAYS = 10;
-const rayGeom = new THREE.BufferGeometry();
-rayGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(RAYS * 6), 3));
-rayGeom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(RAYS * 6), 3));
-const rays = new THREE.LineSegments(rayGeom, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
-scene.add(rays);
-function drawRays(t) {
-  const pos = rayGeom.attributes.position.array, col = rayGeom.attributes.color.array;
-  pos.fill(0); col.fill(0);
-  let k = 0;
-  for (let i = nPts - 1; i >= 0 && k < RAYS; i--) {
-    if (P.t[i] > t) continue;
-    const age = t - P.t[i];
-    if (age > 1.2) break;  // points are time-ordered
-    const f = 1 - age / 1.2;
-    array.toArray(pos, k * 6); ptVec[i].toArray(pos, k * 6 + 3);
-    const c = AMBER.clone().multiplyScalar(0.55 * f);
-    c.toArray(col, k * 6); c.toArray(col, k * 6 + 3);
-    k++;
-  }
-  rayGeom.attributes.position.needsUpdate = true; rayGeom.attributes.color.needsUpdate = true;
-}
-
-// ---------- wavefronts (Act 1) ----------
-// Expanding spheres from emitters spread along the channel; a mic lights up when the true
-// (ray-traced) sound from the channel arrives, and its brightness follows the recorded waveform.
-const emitIdx = [];
-for (let i = 0; i < segs.length; i++) if (kind[i] === 0 && i % 120 === 0) emitIdx.push(i);
-const waveMat = new THREE.ShaderMaterial({
-  uniforms: { opacity: { value: 0 } },
-  vertexShader: `varying float rim; void main() {
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    vec3 n = normalize(normalMatrix * normal);
-    rim = 1.0 - abs(dot(n, normalize(-mv.xyz)));
-    gl_Position = projectionMatrix * mv; }`,
-  fragmentShader: `uniform float opacity; varying float rim; void main() {
-    gl_FragColor = vec4(0.56, 0.72, 1.0, opacity * pow(rim, 4.0)); }`,
-  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-});
-const waveSpheres = emitIdx.map((i) => {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), waveMat.clone());
-  m.position.copy(nodes[segs[i][0]]).lerp(nodes[segs[i][1]], 0.5);
-  m.visible = false; scene.add(m); return m;
-});
-
-// ---------- waveform strip ----------
-const W = D.waveform;
-const wave = document.getElementById("wave");
-const wctx = wave.getContext("2d");
-let view = { t0: 0, t1: W.duration_s };
-function drawWave(t) {
-  const dpr = Math.min(devicePixelRatio, 2);
-  const w = wave.clientWidth, h = wave.clientHeight;
-  if (wave.width !== w * dpr) { wave.width = w * dpr; wave.height = h * dpr; }
-  wctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  wctx.clearRect(0, 0, w, h);
-  const x = (tt) => ((tt - view.t0) / (view.t1 - view.t0)) * w;
-  wctx.fillStyle = "rgba(255,204,85,0.10)";
-  wctx.fillRect(0, 0, Math.max(0, x(t)), h);
-  wctx.strokeStyle = "#9fb3d8"; wctx.lineWidth = 1; wctx.beginPath();
-  for (let i = 0; i < W.min.length; i++) {
-    const tt = i * W.dt_s; if (tt < view.t0 || tt > view.t1) continue;
-    const xx = x(tt);
-    wctx.moveTo(xx, h / 2 - W.max[i] * h * 0.48); wctx.lineTo(xx, h / 2 - W.min[i] * h * 0.48);
-  }
-  wctx.stroke();
-  // reconstructed windows as ticks
-  wctx.fillStyle = "rgba(103,227,161,0.85)";
-  if (mode === "reconstruct") for (let i = 0; i < nPts; i++) if (P.t[i] <= t && P.t[i] >= view.t0) wctx.fillRect(x(P.t[i]) - 0.5, h - 5, 1.2, 5);
-  wctx.strokeStyle = "#ffcc55"; wctx.lineWidth = 2; wctx.beginPath();
-  wctx.moveTo(x(t), 0); wctx.lineTo(x(t), h); wctx.stroke();
-  document.getElementById("tlabel").textContent = t.toFixed(1);
-}
-
-// ---------- timeline / modes ----------
-const audio = document.getElementById("audio");
-const firstArrival = Math.min(...arrival.filter((a) => a !== null));
-const lastArrival = Math.max(...arrival.filter((a) => a !== null));
-const recT0 = Math.max(0, Math.min(P.t[0] ?? firstArrival, firstArrival) - 0.6);
-const recT1 = Math.max(P.t[nPts - 1] ?? lastArrival, lastArrival) + 0.6;
-let mode = "idle";        // idle | strike | reconstruct
-let t = 0, playing = false, speed = 1, last = performance.now();
-let soundOn = false;
-let playStart = null;
-let finalStill = false;   // last step: hold the finished reconstruction without live highlights     // pending auto-start of the reconstruction
-
-function resetDisplay() {
-  flash.fill(0); glow.fill(0);
-  waveSpheres.forEach((s) => (s.visible = false));
-  micSprites.forEach((s) => { s.material.color.set(0x9a9a9a); s.scale.setScalar(0.009); });
-}
-
-function strikeFrame(t) {
-  // Flash: the whole channel heats within microseconds; afterglow fades over ~0.6 s (sped up).
-  const f = Math.max(0, 1 - t / 0.6);
-  flash.fill(f);
-  // Wavefronts expand at the speed of sound from emitters along the channel.
-  waveSpheres.forEach((s) => {
-    const r = C * t * KM;
-    s.visible = t > 0.02 && r < 5;
-    s.scale.setScalar(Math.max(r, 1e-3));
-    s.material.uniforms.opacity.value = 0.22 * Math.max(0, 1 - r / 5);
-  });
-  // Highlight the parts of the channel whose (true, ray-traced) sound is reaching the array now.
-  for (let i = 0; i < segs.length; i++) {
-    const a = arrival[i];
-    glow[i] = a !== null && Math.abs(t - a) < 0.25 ? 1 - Math.abs(t - a) / 0.25 : 0;
-  }
-  micGlow(t);
-}
-function micGlow(t) {
-  const i = Math.floor(t / W.dt_s);
-  const lvl = i >= 0 && i < W.max.length ? Math.max(W.max[i], -W.min[i]) : 0;
-  const c = new THREE.Color(0x9a9a9a).lerp(AMBER, Math.min(lvl * 3, 1));
-  micSprites.forEach((s) => { s.material.color.copy(c); s.scale.setScalar(0.009 * (1 + 1.6 * Math.min(lvl * 3, 1))); });
-}
-
-function reconFrame(t) {
-  flash.fill(0);
-  waveSpheres.forEach((s) => (s.visible = false));
-  // Sound arriving in the current analysis window lights up the true channel it came from.
-  const half = D.window_s / 2;
-  for (let i = 0; i < segs.length; i++) {
-    const a = arrival[i];
-    glow[i] = a !== null && Math.abs(t - a) <= half * 1.5 ? 1 - Math.abs(t - a) / (half * 1.5) : glow[i] * 0.9;
-  }
-  setPointsVisible(t);
-  drawRays(t);
-  micGlow(t);
-  const shown = P.t.filter((x) => x <= t).length;
-  const el = document.getElementById("live-count");
-  if (el) el.textContent = String(shown);
-}
-
-function tick(now) {
-  const dt = Math.min((now - last) / 1000, 0.1); last = now;
-  if (playing) {
-    t += dt * speed;
-    const end = mode === "strike" ? Math.min(lastArrival + 0.8, W.duration_s) : recT1;
-    if (t >= end) { t = end; playing = false; audio.pause(); updatePlayButton(); if (mode === "reconstruct") onReconstructionDone(); }
-  }
-  if (mode === "strike") strikeFrame(t);
-  else if (mode === "reconstruct" && !finalStill) reconFrame(t);
-  paintChannel();
-  if (mode !== "reconstruct") drawRays(-1);
-  drawWave(t);
-  controls.update();
-  composer.render();
-  labels.render(scene, camera);
-  requestAnimationFrame(tick);
-}
-
-function play(fromT, m) {
-  mode = m; t = fromT; playing = true; last = performance.now();
-  if (soundOn && speed === 1) { audio.currentTime = t; audio.play().catch(() => {}); }
-  updatePlayButton();
-}
-function pause() { playing = false; audio.pause(); updatePlayButton(); }
-function updatePlayButton() {
-  const b = document.getElementById("pp"); if (b) b.textContent = playing ? "Pause" : "Play";
-}
-
-// ---------- story ----------
-const M = D.metrics, CH = D.channel;
-const strikeKm = Math.hypot(CH.strike[0], CH.strike[1]) / 1000;
-const pct = (x) => `${Math.round(x * 100)}%`;
-const steps = [
-  {
-    act: "Act 1 · The strike",
-    title: "A lightning strike, simulated",
-    html: `<p>This bolt was generated by the simulator: a <b>${CH.length_km.toFixed(1)} km</b> channel
-      that starts <b>${(CH.nodes[0][2] / 1000).toFixed(1)} km</b> up in the cloud and strikes the ground
-      <b>${strikeKm.toFixed(1)} km</b> from five microphones.</p>
-      <ul><li>It grows as a random walk of 10 m steps. The turn angle between steps is drawn from the
-      distribution measured on photographs of real lightning (mean about 16°).</li>
-      <li>Side branches fork off at random, get shorter and weaker with each generation, and never reach the ground.</li></ul>
-      <p class="note">Drag to look around. Everything you see is the simulation's ground truth; the
-      reconstruction (Act 2) never gets to see it.</p>`,
-    enter() { mode = "idle"; resetDisplay(); t = 0; truthOpacity = 1; points.visible = false; sigma.visible = false; },
-  },
-  {
-    act: "Act 1 · The strike",
-    title: "Every metre of channel makes a bang",
-    html: `<p>The return stroke heats the whole channel to about 30,000 K in microseconds. Each piece
-      expands as a shock wave and relaxes into a pressure pulse (an "N-wave").</p>
-      <ul><li>The pulse length follows from the energy deposited per metre (Few's thunder model). That puts
-      thunder's power near 100 Hz: the deep rumble.</li>
-      <li>The simulator emits a pulse from every 0.5 m of channel, about 20,000 of them, plus small-scale
-      kinks inside each 10 m step.</li></ul>
-      <div class="row"><button class="primary" id="strike">Play the strike</button></div>
-      <p class="note">Blue shells: sound spreading from the channel. Amber: the parts of the channel whose
-      sound is reaching the microphones at that moment.</p>`,
-    enter() { mode = "strike"; resetDisplay(); t = 0; truthOpacity = 1; points.visible = false; sigma.visible = false;
-      document.getElementById("strike").onclick = () => { resetDisplay(); speed = 2; play(0, "strike"); }; },
-  },
-  {
-    act: "Act 1 · The strike",
-    title: "Through a real atmosphere",
-    html: `<p>Sound doesn't travel in straight lines here. The atmosphere is ${D.about.atmosphere}.</p>
-      <ul><li><b>Refraction:</b> air cools with height, so sound bends upward, and wind pushes it sideways.
-      Every path is found by exact ray tracing, checked against an independent ray tracer.</li>
-      <li><b>Absorption:</b> high frequencies fade with distance (ISO 9613-1).</li>
-      <li><b>Ground echo:</b> each pulse arrives twice, directly and off the ground.</li>
-      <li><b>Shadow:</b> ${pct(M.shadow_fraction)} of this channel is in the acoustic shadow: no sound from it
-      reaches the array at all.</li></ul>
-      <p>That is why sound from the channel's different parts arrives over many seconds: the rumble.</p>`,
-    enter() { if (mode !== "strike") { mode = "strike"; resetDisplay(); t = firstArrival; } },
-  },
-  {
-    act: "Act 1 · The strike",
-    title: "What five microphones hear",
-    html: `<p>Five microphones, a square 50 m across with one in the middle, record the thunder (bottom strip). The sharp clap is the
-      closest part of the channel; the rumble that follows is sound from farther away.</p>
-      <div class="row"><button id="listen">Listen</button></div>
-      <ul><li>The recordings include realistic microphone responses, background and wind noise,
-      1-microsecond GPS clock errors and centimetre-level position errors.</li>
-      <li>The same sound reaches each microphone a few milliseconds apart. Those tiny differences
-      encode where it came from.</li></ul>`,
-    enter() {
-      document.getElementById("listen").onclick = () => { audio.currentTime = 0; audio.play().catch(() => {}); };
-    },
-  },
-  {
-    act: "Act 2 · Reconstruction",
-    title: "From sound back to lightning",
-    html: `<p>Now forget the true channel. Using only the five recordings and the time of the flash:</p>
-      <ul><li><b>Direction:</b> in each 0.1 s slice of the recording, the delay of the sound between every
-      pair of microphones (measured by cross-correlation) gives the direction it came from.</li>
-      <li><b>Distance:</b> time since the flash × the speed of sound, traced back through the atmosphere.</li>
-      <li><b>Point:</b> direction + distance = a point in 3D. Method B can separate up to three sounds arriving
-      at once.</li></ul>
-      <div class="row">
-        <button class="primary" id="pp">Play</button>
-        <button data-speed="0.5">0.5×</button><button data-speed="1" aria-pressed="true">1×</button>
-        <button data-speed="2">2×</button><button data-speed="4">4×</button>
-        <button id="snd" aria-pressed="false">Sound</button>
-      </div>
-      <p><span id="live-count" class="live">0</span> of ${nPts} points placed.
-      Amber on the channel: where the sound in the current slice really came from.
-      Amber rays: the directions measured from the array.</p>
-      <p class="note">Click the waveform to jump in time.</p>`,
-    enter() {
-      mode = "reconstruct"; resetDisplay(); t = recT0; points.visible = true; sigma.visible = false;
-      truthOpacity = 0.35; view = { t0: recT0, t1: recT1 };
-      document.getElementById("lg-points").classList.remove("hidden");
-      document.getElementById("pp").onclick = () => (playing ? pause() : (t >= recT1 ? play(recT0, "reconstruct") : play(t, "reconstruct")));
-      document.querySelectorAll("[data-speed]").forEach((b) => (b.onclick = () => {
-        speed = parseFloat(b.dataset.speed);
-        document.querySelectorAll("[data-speed]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-        if (speed !== 1) audio.pause(); else if (playing && soundOn) { audio.currentTime = t; audio.play().catch(() => {}); }
-      }));
-      const snd = document.getElementById("snd");
-      snd.onclick = () => { soundOn = !soundOn; snd.setAttribute("aria-pressed", String(soundOn));
-        if (!soundOn) audio.pause(); else if (playing && speed === 1) { audio.currentTime = t; audio.play().catch(() => {}); } };
-      playStart = setTimeout(() => play(recT0, "reconstruct"), 400);
-    },
-  },
-  {
-    act: "Act 2 · Reconstruction",
-    title: "How close did sound get?",
-    html: `<div class="fact">
-        <b>${M.n_points}</b><span>points reconstructed from sound alone</span>
-        <b>${M.median_error_m.toFixed(1)} m</b><span>median distance to the true channel (90% within ${M.p90_error_m.toFixed(0)} m)</span>
-        <b>${M.angular_error_deg.toFixed(2)}°</b><span>median direction error, seen from the array</span>
-        <b>${pct(M.coverage_main_50m)}</b><span>of the main channel recovered (within 50 m)</span>
-        ${M.coverage_branch_50m === null ? "" : `<b>${pct(M.coverage_branch_50m)}</b><span>of the side branches recovered</span>`}
-      </div>
-      <div class="row">
-        <button id="t-truth" aria-pressed="true">True channel</button>
-        <button id="t-recon" aria-pressed="true">Reconstruction</button>
-        <button id="t-sigma" aria-pressed="false">Uncertainty</button>
-        <button id="t-side" aria-pressed="false">Side by side</button>
-      </div>
-      <p class="note">What it misses, and why: parts of the channel in the acoustic shadow, sound from
-      several places arriving at the same moment, and weak branches. This is one bolt; across 60 simulated
-      bolts the same setup gives a median error of 3.3 m and recovers 86% of the main channel. It assumes
-      the atmosphere is known. With the wind unknown, errors grow to about 130 m: the project's main
-      finding (see the report).</p>`,
-    enter() {
-      mode = "reconstruct"; pause(); t = recT1; points.visible = true; truthOpacity = 0.45;
-      view = { t0: recT0, t1: recT1 }; reconFrame(t); glow.fill(0); drawRays(-1); newest.visible = false; finalStill = true;
-      document.getElementById("lg-points").classList.remove("hidden");
-      const tog = (id, fn) => { const b = document.getElementById(id); b.onclick = () => { const on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", String(on)); fn(on); }; };
-      tog("t-truth", (on) => (channel.visible = on));
-      tog("t-recon", (on) => (points.visible = on));
-      tog("t-sigma", (on) => (sigma.visible = on));
-      tog("t-side", (on) => reconGroup.position.copy(on ? sideOffset : new THREE.Vector3()));
-    },
-  },
-];
-
-let cur = 0;
-const panelEl = document.getElementById("panel");
-const stepEl = document.getElementById("step"), dots = document.getElementById("dots");
-steps.forEach(() => dots.appendChild(document.createElement("i")));
-function show(k) {
-  pause(); clearTimeout(playStart);
-  finalStill = false; reconGroup.position.set(0, 0, 0);
-  cur = Math.max(0, Math.min(steps.length - 1, k));
-  const s = steps[cur];
-  channel.visible = true;
-  if (cur < 4) { view = { t0: 0, t1: W.duration_s }; document.getElementById("lg-points").classList.add("hidden"); }
-  stepEl.innerHTML = `<div class="act">${s.act}<button id="collapse">${panelEl.classList.contains("collapsed") ? "Show" : "Hide"}</button></div><h2>${s.title}</h2>${s.html}`;
-  document.getElementById("collapse").onclick = (e) => {
-    const c = panelEl.classList.toggle("collapsed"); e.target.textContent = c ? "Show" : "Hide"; };
-  [...dots.children].forEach((d, i) => d.classList.toggle("on", i === cur));
-  document.getElementById("prev").disabled = cur === 0;
-  const next = document.getElementById("next");
-  next.textContent = cur === 3 ? "Reconstruct from sound" : cur === steps.length - 1 ? "Start over" : "Next";
-  next.classList.toggle("primary", cur === 3);
-  s.enter();
-}
-function onReconstructionDone() { if (cur === 4) setTimeout(() => show(5), 900); }
-document.getElementById("prev").onclick = () => show(cur - 1);
-document.getElementById("next").onclick = () => show(cur === steps.length - 1 ? 0 : cur + 1);
-
-wave.addEventListener("click", (e) => {
-  const r = wave.getBoundingClientRect();
-  const tt = view.t0 + ((e.clientX - r.left) / r.width) * (view.t1 - view.t0);
-  t = Math.max(view.t0, Math.min(view.t1, tt));
-  if (mode === "idle") mode = "strike";
-  if (playing && soundOn && speed === 1) audio.currentTime = t;
-});
-
-addEventListener("resize", () => {
-  frame();
-  renderer.setSize(innerWidth, innerHeight); labels.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight); chanMat.resolution.set(innerWidth, innerHeight);
-});
-
-// Deep links: #step=4&t=12.5 opens a step paused at a time (also used for screenshots).
-const q = new URLSearchParams(location.hash.slice(1));
-show(Math.max(0, (parseInt(q.get("step") ?? "1", 10) || 1) - 1));
-if (q.has("t")) {
-  pause(); clearTimeout(playStart);
-  t = parseFloat(q.get("t"));
-  if (mode === "idle") mode = "strike";
-}
-if (q.get("side") === "1" && cur === steps.length - 1) document.getElementById("t-side").click();
-requestAnimationFrame(tick);
-window.__viewer = { ready: true, steps: steps.length, points: nPts, segments: segs.length };
-</script>
+<audio id="audio" preload="auto"></audio>
+<script type="module" src="viewer/app.js"></script>
 </body>
 </html>

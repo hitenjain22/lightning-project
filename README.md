@@ -9,7 +9,7 @@ Thunder is an acoustic recording of the lightning channel: every few meters of t
 
 The reconstruction code never sees the ground truth; a test enforces this.
 
-**[Explore it in 3D in your browser](https://hitenjain22.github.io/lightning-project/)**: watch the simulated strike and its sound spreading through the atmosphere, then watch the channel being rebuilt from the thunder, point by point, next to the true one. The site is `docs/index.html` (Three.js, no build step); its data comes from `scripts/make_viewer_data.py`.
+**[Explore it in 3D in your browser](https://hitenjain22.github.io/lightning-project/)**: press *Generate strike* to watch a new simulated strike (stepped leader, return stroke, the thunder spreading through its own atmosphere), then watch the channel being rebuilt from the recording, point by point, next to the true one. *All 60 strikes* shows the whole library at once. Each strike was simulated and reconstructed by this repository's pipeline (`scripts/make_viewer_data.py`); across all 60 the median error per strike is 4.0 m with the atmosphere known. The site is `docs/index.html` (Three.js, no build step).
 
 ![Thunder to 3D lightning](docs/media/hero.gif)
 
