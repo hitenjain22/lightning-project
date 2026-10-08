@@ -34,6 +34,7 @@ from thunder.experiments.montecarlo import _example
 from thunder.experiments.pipeline import run_bolt
 from thunder.experiments.runner import make_run_dir, write_run_files
 from thunder.recon.tdoa import _phat_correlation, _segment, prepare
+from thunder.sensors.noise import pa_to_db_spl
 from thunder.viz.animate import animate_reconstruction
 from thunder.viz.plot3d import reconstruction_figure, write_html
 from thunder.viz.plots import plot_spectrogram, plot_waveform_stack
@@ -159,7 +160,7 @@ def main() -> None:
         info = r.recording.truth.extra.get("corruption_info", {}) if r.recording.truth else {}
         levels[f"{d:g} km"] = {
             "peak_pa": peak,
-            "peak_db_spl": 20 * np.log10(peak / 20e-6),
+            "peak_db_spl": pa_to_db_spl(peak),
             "snr_band_db": float(info.get("snr_band_db", np.nan)),
             "duration_s": float(len(x) / fs),
         }

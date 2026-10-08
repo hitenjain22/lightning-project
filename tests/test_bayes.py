@@ -210,7 +210,12 @@ def test_storm_self_calibration_recovers_unknown_wind():
         pts = np.array(pts)
         sources.append(pts)
         recs.append(synthesize(point_channel(pts), truth, arr, 8000.0, 8, 0.5, ACOUSTIC_EFFICIENCY))
-    cfg = ReconstructionConfig(method="D", dbscan_min_samples=1)
+    # Ideal hardware, known to be ideal: the wind's observable signature (what is left after the
+    # sources absorb the cross-wind displacement) is at the microsecond level, the size of a few
+    # millimetres of mic position, so a centimetre-level position prior hides it (E7).
+    cfg = ReconstructionConfig(
+        method="D", dbscan_min_samples=1, d_sigma_position_m=1e-3, d_sigma_clock_s=1e-7
+    )
 
     def error(rs) -> float:
         errs = [
@@ -250,6 +255,9 @@ def test_method_d_round_trip_in_still_air():
     # Self-calibrating from one bolt: the cross-wind is unobservable, so its prior uncertainty
     # (+-8 m/s) stays in the answer. The estimate may drift within it; the error bars must say so.
     r = reconstruct(rec, arr.nominal_positions, atm, ReconstructionConfig(method="D"))
+    again = reconstruct(rec, arr.nominal_positions, atm, ReconstructionConfig(method="D"))
+    np.testing.assert_array_equal(r.extra["theta"], again.extra["theta"])  # bit-for-bit reproducible
+    np.testing.assert_array_equal(r.points, again.points)
     m, _ = evaluate(r.points, r.covariances, ch, cen, EvaluationConfig(), r.extra["strike_point"])
     th, sd = r.extra["theta"], np.sqrt(np.diag(r.extra["theta_cov"]))
     assert np.all(np.abs(th[2:4]) < 2 * sd[2:4])  # wind consistent with the (true) still air

@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from threadpoolctl import threadpool_limits
 
 from thunder.channel.stats import branch_count, segment_lengths, total_length
 from thunder.config import CHANNEL_PRESETS, ChannelConfig, RunConfig
@@ -74,7 +75,18 @@ def _example(res: BoltResult) -> dict | None:
 def _one(
     args: tuple[dict, dict, int, Any, bool],
 ) -> tuple[list[dict], list[dict[str, FloatArray]], dict | None]:
-    """One bolt: every variant (or the plain config), as table rows, per-point arrays, example."""
+    """One bolt: every variant (or the plain config), as table rows, per-point arrays, example.
+
+    Each worker process uses one linear-algebra thread: the processes already use every core,
+    and single-threaded BLAS makes every stage bit-for-bit reproducible.
+    """
+    with threadpool_limits(limits=1):
+        return _one_bolt(args)
+
+
+def _one_bolt(
+    args: tuple[dict, dict, int, Any, bool],
+) -> tuple[list[dict], list[dict[str, FloatArray]], dict | None]:
     cfg_dict, channel_dict, k, seed_seq, keep = args
     variants = cfg_dict["monte_carlo"].get("variants") or {}
     keep_points = cfg_dict["monte_carlo"].get("keep_points", True)

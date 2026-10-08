@@ -20,6 +20,7 @@ from thunder.sensors.noise import (
     db_spl_to_pa,
     diffuse_coherence,
     generate_field,
+    pa_to_db_spl,
     rain_noise,
     wind_coherence,
     wind_psd_shape,
@@ -324,6 +325,12 @@ def test_absolute_background_level_matches_db_spl(bolt_recording):
     out_w = corrupt(weak, array, cfg, np.random.default_rng(3), sound_speed=C0)
     np.testing.assert_allclose(out_w.signals - weak.signals, noise, rtol=1e-9, atol=1e-15)
     assert out_w.truth.extra["corruption_info"]["snr_band_db"] == pytest.approx(info["snr_band_db"] - 20.0)
+
+
+def test_db_spl_conversions_are_inverse():
+    for level in (0.0, 45.0, 94.0, 137.3):
+        assert pa_to_db_spl(db_spl_to_pa(level)) == pytest.approx(level, abs=1e-12)
+    assert db_spl_to_pa(94.0) == pytest.approx(1.0024, rel=1e-4)  # 94 dB SPL is about 1 Pa
 
 
 def test_background_level_options_are_exclusive():

@@ -346,3 +346,18 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **Audio:** the same bolt shape at 1, 3, 8 and 15 km in the realistic atmosphere with the field-kit sensors, one mic, each file normalized (absolute levels in `docs/audio/levels.json`): peak 137 → 108 dB SPL, rumble 21 → 49 s.
 - **Single runs** (`run_experiment.py` without a Monte Carlo section) save `reconstruction.png` and `.html`: the README's quick demo.
 - **Report:** `docs/report.md`. The related-work citations carry the SPEC's caveat that their bibliographic details are unverified.
+
+## Final audit (2026-10-08)
+
+**Bug: Method D was not bit-for-bit reproducible.** The slow storm test failed after array calibration was added. Investigating it showed two runs of the same script giving different winds: (5.6, 1.7) and (1.9, 1.9) m/s.
+- **Cause:** multithreaded BLAS reorders floating-point sums. The near-flat self-calibration posterior amplifies those last-digit differences into different optima. Single-threaded, two runs are bit-identical (checked).
+- **Fix:** Method D's inference, every Monte Carlo worker and every E7 storm worker run with one linear-algebra thread (`threadpoolctl`, now a declared dependency). This also avoids oversubscription, because the worker processes already use every core.
+- **Tested:** two self-calibrating reconstructions of the same recording are identical.
+- **Methods A–C were reproducible already:** the regenerated goldens are byte-identical.
+- **E6 and E7 rerun** with the deterministic code; their documents report the rerun.
+
+**Finding: a wind estimate needs millimetre-level array knowledge.** The storm test (ideal sensors, 6 m/s wind, still-air prior) gave 30 m with array calibration off, but about 150 m with array calibration at its default 2 cm position prior. The fitted offsets were only 0.3–0.5 cm.
+- **Why:** most of a cross-wind's effect is absorbed by moving the sources (the apparent channel shifts sideways). What remains observable is microsecond-level, the same size as a few millimetres of mic position.
+- **Consequence:** with a centimetre-level position prior, honest inference must report the wind as unknown, which is what E7 found on realistic data.
+- **The test now encodes ideal hardware known to be ideal** (1 mm, 0.1 µs priors).
+- **Practical implication:** storm self-calibration of the wind needs a millimetre-surveyed array (total station) and sub-microsecond clocks. Otherwise, measure the wind independently.

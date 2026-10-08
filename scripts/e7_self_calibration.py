@@ -34,6 +34,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from threadpoolctl import threadpool_limits
 
 from thunder.atmosphere.profiles import build_atmosphere
 from thunder.config import ChannelConfig, EvaluationConfig, RunConfig, load_config
@@ -81,6 +82,13 @@ def _wind_at(theta: np.ndarray, h: float) -> np.ndarray:
 
 
 def _storm(args: tuple[dict, str, int, Any, int]) -> tuple[list[dict], list[dict]]:
+    """One storm on one array (one linear-algebra thread per worker: reproducible, no
+    oversubscription)."""
+    with threadpool_limits(limits=1):
+        return _storm_run(args)
+
+
+def _storm_run(args: tuple[dict, str, int, Any, int]) -> tuple[list[dict], list[dict]]:
     """One storm on one array: synthesize its bolts, run every method, score."""
     cfg_dict, layout, s, seed, n_bolts = args
     base = RunConfig.model_validate(cfg_dict)

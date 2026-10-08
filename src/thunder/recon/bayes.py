@@ -62,6 +62,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy import stats
+from threadpoolctl import threadpool_limits
 
 from thunder.config import ReconstructionConfig
 from thunder.recon.multilat import relative_delays
@@ -605,7 +606,11 @@ def reconstruct_bayes_storm(
     wins: list[_Windows] = [w for w in built if w is not None]
     pb = _problem(wins, wins[0].st.mics, atmosphere, cfg)
     x0 = np.vstack([w.x0 for w in wins])
-    fit, inlier = infer(pb, x0, cfg)
+    # One linear-algebra thread: multithreaded BLAS reorders floating-point sums, and the nearly
+    # flat self-calibration posterior amplifies those last-digit differences into visibly
+    # different answers. Single-threaded, the result is bit-for-bit reproducible.
+    with threadpool_limits(limits=1):
+        fit, inlier = infer(pb, x0, cfg)
     cov = fit.cov_x
     if cfg.d_inference == "mcmc":
         rng = np.random.default_rng(0)  # deterministic reference
