@@ -100,8 +100,8 @@ def synthetic_coverage(mics, self_calibrate: bool, trials: int, k: int, seed: in
     rng = np.random.default_rng(seed)
     free = np.full(7, self_calibrate)
 
-    def model(xx, atm):
-        return effective_times(xx, mics, atm)
+    def model(xx, atm, dm):
+        return effective_times(xx, mics + dm, atm)
 
     cover, z = [], []
     for _ in range(trials):
@@ -162,8 +162,8 @@ def test_mcmc_reference_agrees_with_laplace():
     T, _, _ = effective_times(x, mics, theta)
     t_obs = T + rng.standard_normal((1, 5)) * 80e-6
 
-    def model(xx, atm):
-        return effective_times(xx, mics, atm)
+    def model(xx, atm, dm):
+        return effective_times(xx, mics + dm, atm)
 
     pb = Problem(t_obs, NoiseModel(a, b), np.zeros(1, dtype=int), model, theta, PRIOR_STD, np.zeros(7, bool))
     fit, _ = infer(pb, x, CFG)
@@ -255,3 +255,36 @@ def test_method_d_round_trip_in_still_air():
     assert np.all(np.abs(th[2:4]) < 2 * sd[2:4])  # wind consistent with the (true) still air
     assert sd[2:4].max() > 4.0  # and honestly uncertain
     assert m["calib_2sigma"] > 0.7 and m["point_error_median_m"] < 50.0
+
+
+def test_array_calibration_absorbs_mic_offsets():
+    """Mic position errors are the same in every window: pooled over many windows they bias the
+    shared medium unless modeled. Array calibration recovers them and the wind."""
+    rng = np.random.default_rng(0)
+    mics = square(50.0, 1.5, center=True)
+    m, n_groups = len(mics), 4
+    dm_true = rng.normal(0, 0.02, (m, 3))
+    atm_true = np.array([347.0, -0.002, 3.0, -2.0, 0.0005, 0.0])
+    xs, groups = [], []
+    for g, az0 in enumerate((0, 90, 180, 270)):
+        k = 40
+        az, el = np.radians(az0 + rng.uniform(-10, 10, k)), np.radians(rng.uniform(5, 60, k))
+        r = rng.uniform(1000, 4000, k)
+        xs.append(np.column_stack([r * np.cos(el) * np.sin(az), r * np.cos(el) * np.cos(az), r * np.sin(el)]))
+        groups.append(np.full(k, g))
+    x, group = np.vstack(xs), np.concatenate(groups)
+    T, _, _ = effective_times(x, mics + dm_true, atm_true)
+    a, b = np.full(len(x), (5e-6) ** 2), np.full(len(x), (1e-3) ** 2)
+    t_obs = T + rng.standard_normal(T.shape) * 5e-6 + rng.standard_normal(len(x))[:, None] * 1e-3
+
+    def model(xx, atm, dm):
+        return effective_times(xx, mics + dm, atm)
+
+    pm = np.r_[PRIOR_MEAN[:6], np.zeros(n_groups), np.zeros(m), np.zeros(3 * m)]
+    ps = np.r_[PRIOR_STD[:6], np.full(n_groups, 1e-3), np.full(m, 1e-9), np.full(3 * m, 0.02)]
+    pb = Problem(t_obs, NoiseModel(a, b), group, model, pm, ps, np.ones(len(pm), bool), array_cal=True)
+    fit, inl = infer(pb, x + rng.normal(0, 20, x.shape), CFG)
+    _, _, _, dm = pb.split(fit.theta)
+    assert inl.mean() > 0.95
+    np.testing.assert_allclose(fit.theta[2:4], atm_true[2:4], atol=0.6)
+    assert np.median(np.abs(dm - dm_true)) < 0.01

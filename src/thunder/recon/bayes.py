@@ -72,7 +72,8 @@ ATM_NAMES = ("c0", "c1", "w0x", "w0y", "w1x", "w1y")
 N_ATM = len(ATM_NAMES)
 PRIOR_HEIGHTS_M = np.linspace(0.0, 8000.0, 81)  # for the path-averaged prior from an atmosphere
 
-Model = Callable[[FloatArray, FloatArray], tuple[FloatArray, FloatArray, FloatArray]]
+# model(x (K, 3), medium (6,), mic offsets (M, 3)) -> T (K, M), dT/dx (K, M, 3), dT/dmedium (K, M, 6)
+Model = Callable[[FloatArray, FloatArray, FloatArray], tuple[FloatArray, FloatArray, FloatArray]]
 
 
 # --- forward models -------------------------------------------------------------------
@@ -124,7 +125,10 @@ class AtmosphereModel:
         self.mics = mics
         self.guesses: list[ArrivalPath | None] = [None] * len(mics)
 
-    def __call__(self, x: FloatArray, atm: FloatArray) -> tuple[FloatArray, FloatArray, FloatArray]:
+    def __call__(
+        self, x: FloatArray, atm: FloatArray, mic_offsets: FloatArray
+    ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        # Mic offsets are not estimated with a fixed atmosphere (they are noise terms there).
         # Warm starts only fit the same set of sources (retries use a subset).
         guesses = [g if g is not None and len(g.travel_time) == len(x) else None for g in self.guesses]
         paths = [self.atmosphere.propagate(x, m, guess=g) for m, g in zip(self.mics, guesses, strict=True)]
@@ -200,29 +204,61 @@ class NoiseModel:
 
 @dataclass
 class Problem:
-    """Stacked windows of one or more recordings and the parameter layout."""
+    """Stacked windows of one or more recordings and the parameter layout.
+
+    theta = [medium (6) | dt0 per recording (G) | if array_cal: clock offset per mic (M) |
+    position offset per mic (3M)]. Array calibration models per-mic errors that are the same in
+    every window: left as independent noise they look like signal once hundreds of windows are
+    pooled, and the shared medium parameters absorb them (E7).
+    """
 
     t_obs: FloatArray  # (K, M) observed travel times
     noise: NoiseModel
     group: np.ndarray  # (K,) recording index of each window (its dt0)
     model: Model
-    prior_mean: FloatArray  # (6 + G,)
+    prior_mean: FloatArray
     prior_std: FloatArray
-    free: np.ndarray  # (6 + G,) bool
+    free: np.ndarray  # bool, same length as theta
+    array_cal: bool = False
+
+    @property
+    def n_mics(self) -> int:
+        return int(self.t_obs.shape[1])
+
+    @property
+    def n_groups(self) -> int:
+        return len(self.prior_mean) - N_ATM - (4 * self.n_mics if self.array_cal else 0)
 
     def subset(self, mask: np.ndarray) -> Problem:
         return dataclasses.replace(
             self, t_obs=self.t_obs[mask], noise=self.noise.subset(mask), group=self.group[mask]
         )
 
+    def split(self, theta: FloatArray) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
+        """(medium, dt0 per recording, clock offset per mic, position offset per mic (M, 3))."""
+        g, m = self.n_groups, self.n_mics
+        atm, dt0 = theta[:N_ATM], theta[N_ATM : N_ATM + g]
+        if not self.array_cal:
+            return atm, dt0, np.zeros(m), np.zeros((m, 3))
+        k = N_ATM + g
+        return atm, dt0, theta[k : k + m], theta[k + m : k + 4 * m].reshape(m, 3)
+
     def evaluate(self, x: FloatArray, theta: FloatArray) -> tuple[FloatArray, FloatArray, FloatArray]:
-        """Residuals (K, M), dT/dx (K, M, 3) and dT/dtheta (K, M, 6 + G)."""
-        T, jx, jatm = self.model(x, theta[:N_ATM])
-        n_groups = len(theta) - N_ATM
-        r = self.t_obs - T - theta[N_ATM + self.group][:, None]
-        onehot = np.zeros((*T.shape, n_groups))
-        onehot[np.arange(len(x)), :, self.group] = 1.0
-        return r, jx, np.concatenate([jatm, onehot], axis=-1)
+        """Residuals (K, M), dT/dx (K, M, 3) and d(prediction)/dtheta (K, M, len(theta))."""
+        atm, dt0, clock, dm = self.split(theta)
+        T, jx, jatm = self.model(x, atm, dm)
+        k, m = T.shape
+        r = self.t_obs - T - dt0[self.group][:, None] - clock[None, :]
+        onehot = np.zeros((k, m, self.n_groups))
+        onehot[np.arange(k), :, self.group] = 1.0
+        blocks = [jatm, onehot]
+        if self.array_cal:
+            blocks.append(np.broadcast_to(np.eye(m), (k, m, m)))  # clock offset of mic j
+            jpos = np.zeros((k, m, 3 * m))
+            for j in range(m):  # moving mic j by dm changes its time by dT/dm = -dT/dx
+                jpos[:, j, 3 * j : 3 * j + 3] = -jx[:, j, :]
+            blocks.append(jpos)
+        return r, jx, np.concatenate(blocks, axis=-1)
 
 
 @dataclass
@@ -433,11 +469,15 @@ def window_noise(
     m: int,
     cfg: ReconstructionConfig,
     dt0_free: bool,
+    array_cal: bool = False,
 ) -> NoiseModel:
-    """Per-window noise model from each window's pair misfit (with a floor) and time spread."""
+    """Per-window noise model from each window's pair misfit (with a floor) and time spread.
+    With array calibration the clock and position errors are parameters, not noise."""
     dof = max(n_pairs - (m - 1), 1)
     sigma_meas = np.maximum(misfit * math.sqrt(n_pairs / (2.0 * dof)), cfg.d_sigma_timing_s)
-    a = sigma_meas**2 + cfg.d_sigma_clock_s**2 + (cfg.d_sigma_position_m / st_c) ** 2
+    a = sigma_meas**2
+    if not array_cal:
+        a = a + cfg.d_sigma_clock_s**2 + (cfg.d_sigma_position_m / st_c) ** 2
     b = spread**2 + (0.0 if dt0_free else cfg.d_sigma_t0_s**2)
     return NoiseModel(a, b)
 
@@ -508,7 +548,7 @@ def _windows(
         t_obs[i] = fits[j].t_c + d - rec.reported_t0
     spread = np.array([fits[j].spread for j in sel])
     noise = window_noise(
-        st.c, misfit, spread, len(st.pairs), len(st.mics), cfg, dt0_free=cfg.d_self_calibrate
+        st.c, misfit, spread, len(st.pairs), len(st.mics), cfg, cfg.d_self_calibrate, cfg.d_self_calibrate
     )
     return _Windows(st, fits, sel, t_obs, noise, x0[sel])
 
@@ -516,21 +556,27 @@ def _windows(
 def _problem(
     wins: list[_Windows], mics: FloatArray, atmosphere: Atmosphere, cfg: ReconstructionConfig
 ) -> Problem:
-    n_groups = len(wins)
+    n_groups, m = len(wins), len(mics)
     atm_mean, atm_std = prior_from_atmosphere(atmosphere, cfg)
-    prior_mean = np.concatenate([atm_mean, np.zeros(n_groups)])
-    prior_std = np.concatenate([atm_std, np.full(n_groups, cfg.d_sigma_t0_s)])
-    free = np.full(N_ATM + n_groups, cfg.d_self_calibrate)
+    prior_mean = [atm_mean, np.zeros(n_groups)]
+    prior_std = [atm_std, np.full(n_groups, cfg.d_sigma_t0_s)]
     model: Model
-    if cfg.d_self_calibrate:
+    if cfg.d_self_calibrate:  # medium, flash times and the array itself
+        prior_mean += [np.zeros(m), np.zeros(3 * m)]
+        prior_std += [
+            np.full(m, max(cfg.d_sigma_clock_s, 1e-9)),
+            np.full(3 * m, max(cfg.d_sigma_position_m, 1e-6)),
+        ]
 
-        def effective(xx: FloatArray, atm: FloatArray) -> tuple[FloatArray, FloatArray, FloatArray]:
-            return effective_times(xx, mics, atm)
+        def effective(
+            xx: FloatArray, atm: FloatArray, dm: FloatArray
+        ) -> tuple[FloatArray, FloatArray, FloatArray]:
+            return effective_times(xx, mics + dm, atm)
 
         model = effective
-
     else:
         model = AtmosphereModel(atmosphere, mics)
+    mean, std = np.concatenate(prior_mean), np.concatenate(prior_std)
     return Problem(
         t_obs=np.vstack([w.t_obs for w in wins]),
         noise=NoiseModel(
@@ -538,9 +584,10 @@ def _problem(
         ),
         group=np.concatenate([np.full(len(w.sel), g) for g, w in enumerate(wins)]),
         model=model,
-        prior_mean=prior_mean,
-        prior_std=prior_std,
-        free=free,
+        prior_mean=mean,
+        prior_std=std,
+        free=np.full(len(mean), cfg.d_self_calibrate),
+        array_cal=cfg.d_self_calibrate,
     )
 
 
@@ -580,7 +627,10 @@ def reconstruct_bayes_storm(
         x_all[w.sel], cov_all[w.sel], ok_all[w.sel], q_all[w.sel] = fit.x[sl], cov[sl], inlier[sl], fit.q[sl]
         fits_d = [dataclasses.replace(f, passed=bool(o)) for f, o in zip(w.fits, ok_all, strict=True)]
         keep = np.r_[np.arange(N_ATM), N_ATM + g]
+        _, _, clock, dm = pb.split(fit.theta)
         extra = {
+            "mic_clock_offsets_s": clock,
+            "mic_position_offsets_m": dm,
             "theta": fit.theta[keep],  # (c0, c1, w0x, w0y, w1x, w1y, dt0 of this recording)
             "theta_cov": fit.cov_theta[np.ix_(keep, keep)],
             "theta_names": (*ATM_NAMES, "dt0"),
