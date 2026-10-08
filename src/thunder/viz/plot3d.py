@@ -23,7 +23,8 @@ def _segment_trace(
 
 
 def reconstruction_figure(example: dict[str, Any], title: str) -> go.Figure:
-    """True channel, reconstructed points colored by error, and the microphones."""
+    """True channel, reconstructed points colored by error, their uncertainty (toggle in the
+    legend), and the microphones."""
     nodes, segs = example["nodes"], example["segments"]
     side = ~(example["is_main"] | example["is_incloud"])
     traces = [
@@ -52,6 +53,9 @@ def reconstruction_figure(example: dict[str, Any], title: str) -> go.Figure:
                 text=[f"error {e:.1f} m" for e in err],
             )
         )
+    cov = example.get("covariances")
+    if len(p) and cov is not None and len(cov) == len(p):
+        traces.append(ellipsoid_axes_trace(p, np.asarray(cov)))
     mics = example["mics"]
     traces.append(
         go.Scatter3d(
@@ -74,6 +78,31 @@ def reconstruction_figure(example: dict[str, Any], title: str) -> go.Figure:
         },
     )
     return fig
+
+
+def ellipsoid_axes_trace(points: np.ndarray, covariances: np.ndarray, n_sigma: float = 2.0) -> go.Scatter3d:
+    """Uncertainty ellipsoids drawn as their principal axes (+-n_sigma along each eigenvector):
+    light enough for hundreds of points, and hidden until enabled in the legend."""
+    xs: list[float | None] = []
+    ys: list[float | None] = []
+    zs: list[float | None] = []
+    for p, c in zip(points, covariances, strict=True):
+        lam, vec = np.linalg.eigh(0.5 * (c + c.T))
+        for k in range(3):
+            half = n_sigma * np.sqrt(max(float(lam[k]), 0.0)) * vec[:, k]
+            a, b = p - half, p + half
+            xs += [a[0], b[0], None]
+            ys += [a[1], b[1], None]
+            zs += [a[2], b[2], None]
+    return go.Scatter3d(
+        x=xs,
+        y=ys,
+        z=zs,
+        mode="lines",
+        line={"color": "rgba(80,80,80,0.6)", "width": 2},
+        name=f"uncertainty ({n_sigma:g}-sigma axes)",
+        visible="legendonly",
+    )
 
 
 def write_html(fig: go.Figure, path: Path) -> None:

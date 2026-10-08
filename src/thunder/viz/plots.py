@@ -56,7 +56,10 @@ def plot_waveform_stack(
     """Left: full rumble for every mic (common scale, offset vertically). Right: zoom on the onset."""
     t = np.arange(signals.shape[1]) / fs
     scale = np.abs(signals).max() or 1.0
-    onset = np.flatnonzero(np.abs(signals).max(axis=0) > 1e-3 * scale)
+    # Onset: first sample clearly above both a tiny fraction of the peak and the noise floor
+    # (robust noise level from the median absolute value; thunder is sparse in the record).
+    noise = 1.4826 * float(np.median(np.abs(signals)))
+    onset = np.flatnonzero(np.abs(signals).max(axis=0) > max(1e-3 * scale, 8.0 * noise))
     t_on = t[onset[0]] if len(onset) else 0.0
     for ax, (lo, hi) in zip(axes, ((t_on - 0.5, t[-1]), (t_on - 0.02, t_on + zoom_s)), strict=True):
         sel = (t >= lo) & (t <= hi)

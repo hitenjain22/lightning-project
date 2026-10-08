@@ -1,0 +1,39 @@
+# M9 media (scripts/make_media.py): the README hero animation, the interactive 3D view with
+# uncertainty, the signal figures (waveform stack, spectrograms, GCC-PHAT over time), and thunder
+# WAVs for the same bolt shape at several distances. Illustrations, not performance claims: the
+# experiments in docs/results/ are the evidence. The hero assumes the true atmosphere (oracle).
+experiment: media
+seed: 3
+description: Hero animation, interactive view, signal figures and thunder audio by distance.
+
+channel:
+  preset: branched
+  strike_distance_m: [2500.0, 2500.0]
+
+atmosphere:                    # realistic (as E4/E5)
+  model: stratified
+  temperature_c: 25.0
+  lapse_rate_k_per_km: 6.5
+  relative_humidity: 0.5
+  wind: {speed_mps: 5.0, direction_from_deg: 270.0}
+  absorption: true
+  ground_reflection: true
+
+array:
+  layout: square_center
+  aperture_m: 50.0
+
+synthesis:
+  write_wav: false
+
+sensors:                       # realistic field kit (E2-E7)
+  mic: {preset: measurement}
+  timing: {preset: gps_synced}
+  position: {preset: surveyed}
+  flash_time: {preset: photodiode}
+  noise:
+    background_db_spl: 45.0    # VERIFY
+    wind_speed_mps: 3.0
+
+reconstruction:
+  method: B                    # most channel recovered (E4); true atmosphere (oracle)

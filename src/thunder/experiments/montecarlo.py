@@ -59,6 +59,7 @@ def _example(res: BoltResult) -> dict | None:
         "is_incloud": ch.is_incloud,
         "points": r.points,
         "covariances": r.covariances,
+        "window_times": r.window_times,
         "error_m": res.per_point.get("error_m"),
         "gated_points": r.extra.get("gated_points"),
         "skeleton_edges": r.extra.get("skeleton_edges"),
