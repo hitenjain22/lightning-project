@@ -62,6 +62,7 @@ FIELD_KIT = {
 D_PHONES = {
     "method": "D",
     "d_self_calibrate": True,
+    "d_array_calibration": False,  # metre/ms-level array errors: noise, not parameters (see log)
     "d_sigma_clock_s": 3e-3,
     "d_sigma_position_m": 4.0,
     "d_sigma_t0_s": 9.6e-3,

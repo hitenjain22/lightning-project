@@ -477,6 +477,10 @@ class ReconstructionConfig(StrictModel):
     # hardware (as presets: GPS clocks ~1 us, surveyed positions ~2 cm, photodiode t0), not
     # the truth. The timing floor is E2's calibrated effective timing noise (~50 us).
     d_self_calibrate: bool = True  # estimate path-averaged sound speed and wind jointly
+    # With self-calibration, also estimate per-mic clock and position offsets (array calibration).
+    # Right for small, survey-grade uncertainties (E7); with phone-grade ones (metres, ms) a single
+    # bolt cannot constrain them and treating them as noise is more robust (E6).
+    d_array_calibration: bool = True
     d_inference: Literal["laplace", "mcmc"] = "laplace"  # mcmc (emcee) = slow reference
     d_sigma_timing_s: float = Field(default=5e-5, gt=0)  # floor of per-window measurement noise
     d_sigma_clock_s: float = Field(default=1e-6, ge=0)  # per-mic clock offset std

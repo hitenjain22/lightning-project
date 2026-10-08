@@ -548,8 +548,9 @@ def _windows(
         d, misfit[i] = relative_delays(st, fits[j].tau, np.clip(fits[j].peak, 1e-3, None))
         t_obs[i] = fits[j].t_c + d - rec.reported_t0
     spread = np.array([fits[j].spread for j in sel])
+    array_cal = cfg.d_self_calibrate and cfg.d_array_calibration
     noise = window_noise(
-        st.c, misfit, spread, len(st.pairs), len(st.mics), cfg, cfg.d_self_calibrate, cfg.d_self_calibrate
+        st.c, misfit, spread, len(st.pairs), len(st.mics), cfg, cfg.d_self_calibrate, array_cal
     )
     return _Windows(st, fits, sel, t_obs, noise, x0[sel])
 
@@ -562,12 +563,14 @@ def _problem(
     prior_mean = [atm_mean, np.zeros(n_groups)]
     prior_std = [atm_std, np.full(n_groups, cfg.d_sigma_t0_s)]
     model: Model
-    if cfg.d_self_calibrate:  # medium, flash times and the array itself
+    array_cal = cfg.d_self_calibrate and cfg.d_array_calibration
+    if array_cal:  # the array itself: clock and position offset per mic
         prior_mean += [np.zeros(m), np.zeros(3 * m)]
         prior_std += [
             np.full(m, max(cfg.d_sigma_clock_s, 1e-9)),
             np.full(3 * m, max(cfg.d_sigma_position_m, 1e-6)),
         ]
+    if cfg.d_self_calibrate:  # medium and flash times
 
         def effective(
             xx: FloatArray, atm: FloatArray, dm: FloatArray
@@ -588,7 +591,7 @@ def _problem(
         prior_mean=mean,
         prior_std=std,
         free=np.full(len(mean), cfg.d_self_calibrate),
-        array_cal=cfg.d_self_calibrate,
+        array_cal=array_cal,
     )
 
 
