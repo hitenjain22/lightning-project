@@ -9,9 +9,11 @@ Thunder is an acoustic recording of the lightning channel: every few meters of t
 
 The reconstruction code never sees the ground truth; a test enforces this.
 
-![Demo: a reconstructed bolt](docs/figures/demo_reconstruction.png)
+![Thunder to 3D lightning](docs/media/hero.gif)
 
-*One bolt from `configs/base.yaml`. Left: the true channel (lines) and the reconstructed points colored by error. Right: the thunder recorded at one microphone.*
+*A bolt 2.5 km away, reconstructed by Method B from thunder at five microphones. Points appear as their sound reaches the array, colored by their distance to the true channel (faint lines); the cursor runs along the recorded waveform. The atmosphere is realistic (lapse rate, wind, absorption, ground reflection) and known to the reconstruction here. [Interactive 3D view with uncertainty](docs/media/reconstruction.html) (download and open in a browser). Listen: the same bolt at [1 km](docs/audio/thunder_1km.wav), [3 km](docs/audio/thunder_3km.wav), [8 km](docs/audio/thunder_8km.wav), [15 km](docs/audio/thunder_15km.wav).*
+
+The [technical report](docs/report.md) explains the physics, the methods and every experiment.
 
 ## Quickstart
 
@@ -21,7 +23,7 @@ uv pip install -e ".[dev]"                           # or: pip install -e ".[dev
 python scripts/run_experiment.py configs/base.yaml   # one bolt end to end, ~10 s (first run ~1-2 min: caches)
 ```
 
-This writes `results/base/<run_id>/`:
+This writes `results/base/<run_id>/` (its `reconstruction.png` looks like [this](docs/figures/demo_reconstruction.png)):
 - `figures/reconstruction.png` and an interactive `figures/reconstruction.html`;
 - the recorded thunder as WAV files (`audio/`);
 - all metrics (`metrics.json`);
@@ -76,6 +78,6 @@ The full experiments take from about 30 minutes (E4, E6) to several hours (E7) o
 - [`docs/log.md`](docs/log.md): every design decision and bug found, with the evidence.
 - [`docs/assumptions.md`](docs/assumptions.md): every modeling assumption. Uncertain physical values are marked VERIFY.
 
-**Status:** milestones M0–M8 done (simulation, four methods, experiments E1–E7). Next: M9, visualization polish and a technical report.
+**Status:** milestones M0–M9 done (simulation, four methods, experiments E1–E7, media and [report](docs/report.md)). Regenerate the media with `python scripts/make_media.py --docs`.
 
 **Limitations:** simulation only. Field validation with a real array, ideally alongside lightning photographs as ground truth, is the natural next step. The acoustic source efficiency and several sensor and noise levels are literature-based estimates (see `docs/assumptions.md`).

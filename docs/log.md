@@ -335,3 +335,14 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **Cost driver:** fixed-atmosphere Method D, with ray tracing to a 10 m mast mic about 5× slower than to ground mics.
 - **Rerun:** the array-calibration rerun used the flat array only (75 min).
 - **Mast results:** they come from the first run.
+
+## M9: Visualization and write-up (2026-10-08)
+
+- **Hero animation** (`thunder.viz.animate`): points appear at their window time (the recorder time at the reference mic), over the faint true channel, while a cursor runs along the waveform. The view turns 50° over the clip. Output is a GIF through Pillow (no ffmpeg on this machine); 600 px, 60 frames plus a hold on the last, about 2 MB.
+  - **Pillow merges identical frames:** the hold becomes one longer final frame, so the test checks the total duration rather than the frame count.
+- **Interactive view:** uncertainty ellipsoids are drawn as their 2σ principal axes, one line trace for all points, hidden until enabled in the legend. Full ellipsoid meshes for hundreds of points would make the HTML heavy and unreadable.
+- **GCC-PHAT heatmap:** computed with Method A's own preprocessing and first-pass correlator (`prepare`, `_phat_correlation`), so it shows exactly what the method sees.
+- **Bug: the waveform-stack onset detector zoomed to t = 0 on noisy recordings.** Its threshold was 0.1% of the peak, which noise exceeds. It now also requires 8× a robust noise level (median absolute value; thunder is sparse in the recording). Tested.
+- **Audio:** the same bolt shape at 1, 3, 8 and 15 km in the realistic atmosphere with the field-kit sensors, one mic, each file normalized (absolute levels in `docs/audio/levels.json`): peak 137 → 108 dB SPL, rumble 21 → 49 s.
+- **Single runs** (`run_experiment.py` without a Monte Carlo section) save `reconstruction.png` and `.html`: the README's quick demo.
+- **Report:** `docs/report.md`. The related-work citations carry the SPEC's caveat that their bibliographic details are unverified.

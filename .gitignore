@@ -10,3 +10,4 @@ __pycache__/
 
 # Run outputs (regenerable from config + seed)
 /results/
+/notes/
