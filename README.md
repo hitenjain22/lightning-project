@@ -16,9 +16,9 @@ The reconstruction code never sees the ground truth; a test enforces this.
 ## Quickstart
 
 ```bash
-uv venv --python 3.12 && source .venv/bin/activate
-uv pip install -e ".[dev]"
-python scripts/run_experiment.py configs/base.yaml   # one bolt end to end, ~10 s
+uv venv --python 3.12 && source .venv/bin/activate   # or: python3.12 -m venv .venv && source .venv/bin/activate
+uv pip install -e ".[dev]"                           # or: pip install -e ".[dev]"
+python scripts/run_experiment.py configs/base.yaml   # one bolt end to end, ~10 s (first run ~1-2 min: caches)
 ```
 
 This writes `results/base/<run_id>/`:
