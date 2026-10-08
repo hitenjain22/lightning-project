@@ -22,7 +22,7 @@ Thunder carries the geometry of the lightning channel that produced it. Each pie
 - **Array design:** a cheap surrogate, built from the Cramér–Rao bound evaluated over the channel's directions and corrected for the wavefront-curvature bias of plane-wave methods, ranks 20 array layouts in the same order as full simulation (Spearman ρ = 0.98).
 - **Error budget:** clocks within 0.4 ms, mic positions within 12 cm, temperature within 2.5 K and wind within 0.7 m/s keep the median error under 20 m.
 - **Four phones:** positions measured to about 10 cm and clocks synced to about 0.1 ms reach professional-kit accuracy.
-- **Self-calibration:** Method D recovers the temperature profile and gives honest error bars, but not the wind, from a few realistic bolts. I trace that limit to per-microphone systematic errors and model misspecification.
+- **Self-calibration:** Method D recovers the temperature profile and gives near-honest error bars, but not the wind, from a few realistic bolts. I trace that limit to per-microphone systematic errors and model misspecification.
 
 ## 1. Introduction
 
@@ -246,7 +246,7 @@ Distance 1–15 km, branching depth 0–3, and in-cloud sections, with Method B 
 | **+ tape + sync** | **180 m** (field kit: 165 m) |
 | + tape + sync, true atmosphere | **25 m** |
 
-Phone positions are the limit. Once they are measured, phones are as good as professional gear, and what remains is the wind.
+Phone positions are the limit. Once they are measured, phones are as good as professional gear, and what remains is the wind. Method D on the upgraded phones (self-calibrating the atmosphere and the array) reaches 163 m with near-honest error bars (2σ coverage 0.87).
 
 ### E7: self-calibration
 
@@ -255,8 +255,8 @@ Phone positions are the limit. Once they are measured, phones are as good as pro
 | | Median error | 2σ coverage (nominal 0.74) |
 | --- | --- | --- |
 | Standard atmosphere | 174 m | 0.00 |
-| D, self-calibrating each bolt | 170 m | 0.87 |
-| D, 6-bolt storm | 146 m | 0.73 |
+| D, self-calibrating each bolt | 169 m | 0.87 |
+| D, 6-bolt storm | 150 m | 0.68 |
 | True atmosphere | 3.2 m | 0.92 |
 
 **What self-calibration achieves:**
@@ -265,6 +265,7 @@ Phone positions are the limit. Once they are measured, phones are as good as pro
 
 **What it does not:** recover the wind. A controlled study explains why:
 - **One bolt sees the wind only along its line of sight.** A cross-wind shifts every apparent source sideways in proportion to its travel time, which looks like a different channel. Storms with bolts at several azimuths fix this in clean conditions (13–24 m vs 80–98 m).
+- **What is left of the wind's signal is tiny.** Once the sources absorb a cross-wind's displacement, the remaining signature is microsecond-level, the size of a few millimetres of mic position. A controlled storm recovers the wind with a 1 mm array prior, but not with 2 cm.
 - **On realistic recordings, per-mic systematic errors are pooled across windows and absorbed as fake wind.** Even 2 cm of position error (about 60 µs) does this. Modelling them as parameters ("array calibration") makes the error bars honest. But mic offsets and the wind then share the signal, and the likelihood itself prefers a slightly wrong wind (model misspecification).
 
 The practical route to the 3 m oracle is independent wind data used as Method D's prior.

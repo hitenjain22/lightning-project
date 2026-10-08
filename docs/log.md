@@ -361,3 +361,11 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **Consequence:** with a centimetre-level position prior, honest inference must report the wind as unknown, which is what E7 found on realistic data.
 - **The test now encodes ideal hardware known to be ideal** (1 mm, 0.1 µs priors).
 - **Practical implication:** storm self-calibration of the wind needs a millimetre-surveyed array (total station) and sub-microsecond clocks. Otherwise, measure the wind independently.
+
+**Final reproducible runs.**
+- **E7:** commit `a0ff2aa`. Conclusions unchanged, with slightly different numbers now that inference is deterministic: 6-bolt storm 150 m (was 146 m), 2σ coverage 0.68.
+- **E6, first rerun:** also at `a0ff2aa`. It exposed that array calibration with phone-grade priors (±4 m, ±3 ms) is ill-posed from one bolt: 1,548 m and overconfident.
+- **Decision:** new switch `d_array_calibration` (default on). With it off, per-mic errors stay noise terms. E6's raw-phone Method D variant turns it off.
+- **E6, final run** (commit `4b1925f`):
+  - raw phones with D: 528 m, bars 0.25 / 0.54 / 0.71;
+  - upgraded phones with D, array calibration on: **163 m, bars 0.53 / 0.87 / 0.93**, better than B (180 m) and equal to the field kit.

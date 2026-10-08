@@ -16,7 +16,7 @@
 | Assumed atmosphere | Standard: right surface temperature, 6.5 K/km, no wind |
 | Phones | 4 on a 50 m square. `phone` mic preset (100 Hz high-pass, 32 dB SPL self-noise, 16-bit). Clocks aligned by a hand clap (3 ms offsets, 20 ppm drift). Flash time from 30 fps video (uniform ±16.7 ms). Phone GPS positions (3 m horizontal, 5 m vertical). 45 dB SPL ambient, 3 m/s wind noise |
 | Method | B (most coverage in E4); Method D (self-calibrating, noise priors matching each setup) for error-bar honesty |
-| Provenance | `results/e6_consumer/20261008T025801_d549ad67a6fc_s20261006`, commit `a9b6a9f`, script `scripts/e6_consumer.py` |
+| Provenance | `results/e6_consumer/20261008T165703_9b368dd12d90_s20261006`, commit `4b1925f` (bit-for-bit reproducible), script `scripts/e6_consumer.py` |
 
 ## The upgrade ladder
 
@@ -47,11 +47,13 @@ Brackets are 95% bootstrap CIs over bolts. "Points per bolt" counts reconstructe
 4. **Flash timing from video is good enough.** The photodiode changes nothing (180 vs 180 m). A ±17 ms flash time shifts ranges by about 6 m, small next to everything else (E3).
 5. **What remains is the atmosphere, for phones and professional kit alike.** With the wind known, upgraded phones reach 25 m. Without it, everything sits at about 170–180 m. That is the self-calibration problem of E7.
 
-**Honesty of the error bars.**
+**Method D: honest error bars, and the best accuracy once the phones are upgraded.**
 - **Method B** reports covariances only as a by-product: its 1/2/3σ coverage is near 0.
-- **Method D** (self-calibrating, told the phone-grade noise levels) is much closer, but still overconfident: 0.25 / 0.54 / 0.71 for phones and 0.25 / 0.49 / 0.65 for the upgraded phones, against 0.20 / 0.74 / 0.97 nominal.
-- **Accuracy:** D is no more accurate than B here (528 vs 490 m; 235 vs 180 m).
-- **Why the bars are overconfident:** this run predates D's array calibration, which models per-mic position and clock errors explicitly (E7, commit `f581407`), so those errors were still treated as independent noise.
+- **Upgraded phones** (tape + 0.1 ms sync): Method D self-calibrates the atmosphere and the array (per-mic clock and position offsets).
+  - **Accuracy:** **163 m** [147, 168], the best phone result without a wind measurement. It beats Method B (180 m) and matches the field kit (165 m).
+  - **Error bars:** nearly honest, **0.53 / 0.87 / 0.93** against 0.20 / 0.74 / 0.97 nominal.
+- **Raw phones:** Method D treats the metre- and millisecond-level array errors as noise (`d_array_calibration: false`). Result: 528 m, error bars 0.25 / 0.54 / 0.71, no better than B.
+- **Why array calibration is off for raw phones:** with it on, a single bolt cannot constrain 20 array parameters with ±4 m and ±3 ms priors. An earlier run (commit `a0ff2aa`) gave 1,548 m and overconfident bars (0.04 / 0.12 / 0.16). Array calibration is for survey-grade arrays.
 
 ## What you could do with 4 phones
 
