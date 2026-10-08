@@ -2,13 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lightning from Thunder</title>
-<meta name="description" content="Interactive 3D: simulated lightning strikes, their thunder, and each channel rebuilt in 3D from sound alone.">
+<meta name="description" content="Simulated lightning strikes in 3D, their thunder, and each channel rebuilt from five microphones.">
+<meta name="theme-color" content="#0d121c">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;650;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="viewer/style.css">
+<link rel="modulepreload" href="viewer/app.js">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -19,22 +21,16 @@
 <body>
 <div id="scene"></div>
 <div id="flash"></div>
-<div id="loading">Loading the storm…</div>
+<div id="loading">Loading strikes…</div>
 
 <header id="top">
   <div class="brand">
-    <svg width="22" height="26" viewBox="0 0 22 26" aria-hidden="true"><path d="M13 0 2 15h7l-2 11 13-16h-8l3-10z" fill="#ffc94a"/></svg>
-    <div>
-      <h1>Lightning from Thunder</h1>
-      <p>Simulated strikes, their thunder, and each channel rebuilt in 3D from sound alone</p>
-    </div>
+    <svg width="16" height="19" viewBox="0 0 22 26" aria-hidden="true"><path d="M13 0 2 15h7l-2 11 13-16h-8l3-10z" fill="#efb560"/></svg>
+    <span>Lightning from Thunder</span>
   </div>
   <div class="actions">
-    <button id="gen" class="gold big" title="Show a different simulated strike">
-      <svg width="14" height="16" viewBox="0 0 22 26" aria-hidden="true"><path d="M13 0 2 15h7l-2 11 13-16h-8l3-10z" fill="currentColor"/></svg>
-      <span>Generate strike</span>
-    </button>
-    <button id="storm" class="ghost" title="Every strike in the library at once"><span class="wide">All</span> <span id="storm-n"></span> strikes</button>
+    <button id="gen" class="primary" title="Show another simulated strike (N)">New strike</button>
+    <button id="storm" title="Every strike in the library">All <span id="storm-n">60</span></button>
     <nav class="links">
       <a href="https://github.com/hitenjain22/lightning-project" target="_blank" rel="noopener">Code</a>
       <a href="https://github.com/hitenjain22/lightning-project/blob/main/docs/report.md" target="_blank" rel="noopener">Report</a>
@@ -42,45 +38,36 @@
   </div>
 </header>
 
-<section id="panel" class="card" aria-live="polite">
+<section id="panel" class="panel" aria-live="polite">
+  <nav id="tabs" aria-label="Steps"></nav>
+  <button class="collapse" id="collapse" aria-expanded="true">Hide</button>
   <div id="step"></div>
-  <div id="nav">
-    <button id="prev">Back</button>
-    <div id="dots"></div>
-    <button id="next">Next</button>
-  </div>
 </section>
 
-<aside id="hud" class="card">
-  <div class="head"><span id="hud-kicker">Strike</span><em id="hud-id"></em></div>
-  <h3 id="hud-title"></h3>
-  <dl class="facts" id="hud-facts"></dl>
-  <div class="legend">
-    <div><span class="sw" style="color:var(--blue);background:var(--blue)"></span>true channel (simulation)</div>
-    <div><span class="sw" style="color:var(--mint);background:var(--mint)"></span>its sound reaching the mics now</div>
-    <div><span class="dot" style="background:#fff;box-shadow:0 0 6px #fff"></span>5 microphones</div>
-    <div><span class="dot" style="background:var(--warm1);box-shadow:0 0 6px var(--warm1)"></span>rebuilt from sound, by error:</div>
-    <div style="display:block">
-      <div class="bar"></div>
-      <div class="scale"><span>0 m</span><span>5</span><span>10</span><span>15+ m</span></div>
-    </div>
-  </div>
+<aside id="facts" class="panel">
+  <h3><span id="f-title">Strike</span><span id="f-id"></span></h3>
+  <dl id="f-list"></dl>
+  <ul class="key">
+    <li><i style="background:var(--truth)"></i>True channel</li>
+    <li><i style="background:var(--heard)"></i>Being heard now</li>
+    <li><i style="background:var(--amber)"></i>Rebuilt from sound, by error</li>
+    <li style="display:block"><div class="scale"></div><div class="scale-labels"><span>0 m</span><span>5</span><span>10</span><span>15+</span></div></li>
+  </ul>
 </aside>
 
-<div id="phase"></div>
-<div id="hint">Drag to rotate · scroll to zoom · right-drag to pan</div>
+<div id="hint">Drag to turn · scroll to zoom · right-drag to pan</div>
 
-<section id="player" class="card">
+<section id="player" class="panel">
   <div class="bar">
     <button id="play" aria-label="Play"></button>
-    <div class="seg" id="speeds">
-      <button data-speed="0.5">0.5×</button><button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
+    <div class="seg" role="group" aria-label="Speed">
+      <button data-speed="0.5">½×</button><button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
     </div>
-    <button id="sound" aria-pressed="true" title="Thunder audio">Sound</button>
-    <span class="grow"></span>
-    <span class="time"><span class="long">recorded thunder · </span><b id="tlabel">0.0</b> s after the flash</span>
+    <button id="sound" aria-pressed="true">Sound</button>
+    <span id="status"></span>
+    <span class="time"><b id="tlabel">0.0</b> s</span>
   </div>
-  <canvas id="wave" aria-label="Recorded thunder waveform; click to jump in time"></canvas>
+  <canvas id="wave" aria-label="Recorded thunder. Click to jump in time."></canvas>
 </section>
 
 <audio id="audio" preload="auto"></audio>

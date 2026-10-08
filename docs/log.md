@@ -400,3 +400,14 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **Colour-space bug fixed during review:** colours written as sRGB numbers were treated as linear, lifting the night sky to grey; the sky shader and ground now convert explicitly.
 - **Clock:** animation uses `performance.now()`, not the requestAnimationFrame timestamp, which some browsers report on a different timebase (the intro never played in headless Chrome).
 
+## Website v3: simpler, calmer, faster (2026-10-08)
+
+**Request:** shorter, plainer text; a simpler walk-through; a cleaner and smoother 3D view; a less generic-looking interface; better performance; a bug sweep.
+
+- **Flow:** six steps became four tabs (Strike, Thunder, Rebuild, Result), each with two short paragraphs, one primary button and the detail in a collapsed "What the simulation includes" or "Method" section. *New strike* opens straight into the thunder. The floating status chip moved into the player bar as one line of text.
+- **Look:** one dark palette chosen for the subject (a night storm): slate-blue night, pale steel blue for the true channel, soft teal for "being heard now", amber to rust for the rebuilt points, with amber as the only interface accent. IBM Plex Sans for text and Plex Mono for numbers, units and labels. Removed: glowing gradient buttons, backdrop blur, emoji, uppercase eyebrow labels, the rain.
+- **Smoother:** the scene renders through a 4× multisampled target (lines were aliased before, because MSAA on the canvas does not apply to post-processing targets); damping is a little softer; pixel ratio capped at 1.75.
+- **Faster:** frames are rendered only while something changes (playback, the intro, a camera move, a UI action) instead of 60 times a second; idle GPU use drops to zero. Cloud sprites cut from 170 to 70, rain removed, bloom lighter.
+- **Robustness:** clear messages when the library cannot load or WebGL is off; a stale strike load can no longer replace a newer one; failed fetches are not cached; playback pauses when the tab is hidden; Escape leaves the all-strikes view; Space does not double-trigger a focused button; a missing-element crash on re-entering a step from the all-strikes view is gone (steps only autoplay on a fresh visit).
+- **Labels:** distance-ring labels are placed on the far side of the array from the strike so they never overlap the microphone and strike labels.
+
