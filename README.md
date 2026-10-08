@@ -9,6 +9,8 @@ Thunder is an acoustic recording of the lightning channel: every few meters of t
 
 The reconstruction code never sees the ground truth; a test enforces this.
 
+**[Explore it in 3D in your browser](https://hitenjain22.github.io/lightning-project/)**: watch the simulated strike and its sound spreading through the atmosphere, then watch the channel being rebuilt from the thunder, point by point, next to the true one. The site is `docs/index.html` (Three.js, no build step); its data comes from `scripts/make_viewer_data.py`.
+
 ![Thunder to 3D lightning](docs/media/hero.gif)
 
 *A bolt 2.5 km away, reconstructed by Method B from thunder at five microphones. Points appear as their sound reaches the array, colored by their distance to the true channel (faint lines); the cursor runs along the recorded waveform. The atmosphere is realistic (lapse rate, wind, absorption, ground reflection) and known to the reconstruction here. [Interactive 3D view with uncertainty](docs/media/reconstruction.html) (download and open in a browser). Listen: the same bolt at [1 km](docs/audio/thunder_1km.wav), [3 km](docs/audio/thunder_3km.wav), [8 km](docs/audio/thunder_8km.wav), [15 km](docs/audio/thunder_15km.wav).*

@@ -369,3 +369,15 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **E6, final run** (commit `4b1925f`):
   - raw phones with D: 528 m, bars 0.25 / 0.54 / 0.71;
   - upgraded phones with D, array calibration on: **163 m, bars 0.53 / 0.87 / 0.93**, better than B (180 m) and equal to the field kit.
+
+## Interactive website (2026-10-08)
+
+**What:** `docs/index.html`, served by GitHub Pages from `/docs`. Act 1 shows the simulated strike: the channel, sound spreading from it, the parts of the channel being heard at each moment, and the recorded thunder. Act 2 plays the reconstruction in recording time: each 0.1 s window's point appears with a ray from the array, and the true channel lights up where that window's sound really came from. The last step gives honest metrics, with truth, reconstruction, 2σ uncertainty and side-by-side toggles.
+- **Data:** `scripts/make_viewer_data.py` runs the same pipeline as the hero GIF (`configs/experiments/media.yaml`, seed 3: Method B, realistic atmosphere and sensors, atmosphere known). It exports `docs/viewer/bolt.json` (87 kB) and the reference mic's recording as `thunder.wav`. Ground truth goes into the JSON only for display and scoring; the reconstruction never reads it.
+- **"Being heard now" highlight:** uses each segment's true ray-traced arrival time at the reference mic (`segment_arrival_times`), not straight-line distance, so it follows the real refraction. Shadowed segments never light up.
+- **Wavefront shells are illustrative:** spheres at 347 m/s from a few emitters on the main channel. The real fronts are refracted; the highlight above is the exact part.
+- **No build step:** Three.js 0.160 from jsDelivr through an import map. Fat lines (`LineSegments2`) and bloom make the channel readable; reconstructed points are fixed-pixel-size so they stay visible at any zoom; low error is drawn bright (reversed viridis).
+- **Honesty:** the final panel quotes this bolt's numbers and the 60-bolt E4 result (3.3 m, 86% main coverage for B with the true atmosphere), and states that the unknown wind raises errors to about 130 m.
+- **Deep links:** `#step=N&t=T` opens a step paused at a time (`&side=1` on the last step). Used for headless screenshot checks at desktop and phone widths.
+- **Decision: keep the GitHub repo and add Pages,** rather than deleting it and making a new one. Deleting is irreversible and loses history, stars and links; Pages gives the site a URL from the same repo.
+
