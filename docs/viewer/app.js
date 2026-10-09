@@ -927,7 +927,8 @@ if (!S) fail("Couldn't load the first strike. Check your connection and reload t
 const startStep = Math.max(0, (parseInt(q.get("step") ?? "1", 10) || 1) - 1);
 if (startStep) show(startStep);
 camera.position.copy(S.home); controls.target.copy(S.focus); tween = null;
-if (q.has("t")) { setPlaying(false); seek(parseFloat(q.get("t"))); if (cur === 3 && q.get("side") === "1") $("t-side").click(); }
+if (q.has("t")) { setPlaying(false); seek(parseFloat(q.get("t"))); }
+if (cur === 3 && q.get("side") === "1") $("t-side").click();
 if (wantStorm) enterStorm();
 $("loading").style.opacity = "0";
 setTimeout(() => $("loading").remove(), 450);

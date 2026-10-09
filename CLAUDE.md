@@ -30,3 +30,4 @@ Project: acoustic lightning reconstruction (simulation only). The full spec is i
 - Tests: `pytest` (slow tests are skipped by default; run them with `pytest -m slow`).
 - Lint: `ruff check .`; types: `mypy src`.
 - Run a pipeline: `python scripts/run_experiment.py configs/base.yaml`.
+- Website: `python -m http.server -d docs` (then http://localhost:8000); rebuild its strike library with `python scripts/make_viewer_data.py --n 60`.

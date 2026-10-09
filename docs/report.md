@@ -24,6 +24,8 @@ Thunder carries the geometry of the lightning channel that produced it. Each pie
 - **Four phones:** positions measured to about 10 cm and clocks synced to about 0.1 ms reach professional-kit accuracy.
 - **Self-calibration:** Method D recovers the temperature profile and gives near-honest error bars, but not the wind, from a few realistic bolts. I trace that limit to per-microphone systematic errors and model misspecification.
 
+**Interactive demonstration:** a 3D website (https://hitenjain22.github.io/lightning-project/) plays 60 simulated strikes, their thunder, and each reconstruction next to the true channel (median error per strike 4.0 m with the atmosphere known).
+
 ## 1. Introduction
 
 **Thunder ranging and the array idea.** A thunder recording starts with a sharp clap and rumbles on for tens of seconds, because the channel is kilometres long and tortuous: sound from its different parts arrives at different times. With one microphone, the delay since the flash gives only range. With several microphones a few tens of metres apart, the small differences in arrival time also give direction. Range plus direction, window by window through the rumble, traces the channel in 3D.
@@ -285,6 +287,14 @@ The practical route to the 3 m oracle is independent wind data used as Method D'
 2. **Use measured wind** (anemometer plus sounding) as Method D's prior. Self-calibrate over storms with wide azimuth coverage.
 3. **A curvature-corrected Method A**, and per-subarray processing for distributed arrays.
 4. **The SPEC's stretch goals:** weak-shock source propagation, turbulence, intracloud-only flashes, stroke separation, and a learned reconstructor tested under model mismatch.
+
+## Interactive demonstration
+
+The website (`docs/index.html`, `docs/viewer/`) shows the pipeline on a library of 60 strikes, exported by `scripts/make_viewer_data.py` with the same code as the experiments:
+- **Variety:** strike 0 is the hero bolt of the media config; the other 59 draw a channel type (branched, with an in-cloud section, or unbranched), a distance of 1.5–6 km, any direction, a wind of 0–8 m/s and a ground temperature of 15–32 °C from a fixed seed. Lapse rate, sensors and array are the realistic E4 setup.
+- **Reconstruction:** Method B with the true atmosphere, labelled as such on the page.
+- **No selection:** every generated strike is published. Median error per strike 2.6–9.2 m (median 4.0 m), median main-channel coverage 83%, 11,445 points. These sit slightly above E4's 3.3 m because the library spans larger distances and includes in-cloud strikes.
+- **What is illustrative:** the leader animation's timing, the expanding sound shells and the cloud deck. The highlighted "being heard now" parts of the channel use the exact ray-traced arrival times, and the audio is the simulated recording.
 
 ## Reproducibility
 

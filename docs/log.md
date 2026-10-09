@@ -411,3 +411,12 @@ This is exact for wind, including the lateral drift that the common "effective s
 - **Robustness:** clear messages when the library cannot load or WebGL is off; a stale strike load can no longer replace a newer one; failed fetches are not cached; playback pauses when the tab is hidden; Escape leaves the all-strikes view; Space does not double-trigger a focused button; a missing-element crash on re-entering a step from the all-strikes view is gone (steps only autoplay on a fresh visit).
 - **Labels:** distance-ring labels are placed on the far side of the array from the strike so they never overlap the microphone and strike labels.
 
+
+## Documentation refresh, v1.1.0 (2026-10-08)
+
+- **README rebuilt around the website:** it opens with a screenshot of the live site (taken from the deployed page) instead of the M9 matplotlib GIF, which moved to a "More media" section with the Plotly view and the audio. Added a website section with two more screenshots, a website row in "What's inside", the local-viewing and library-regeneration commands, and the exact test count.
+- **Report:** the abstract mentions the website, and a new "Interactive demonstration" section states how the 60-strike library was drawn, that nothing was selected, how its numbers relate to E4, and which visuals are illustrative.
+- **Bug:** the `side=1` deep link only worked together with `t=`; it now opens the side-by-side view on its own.
+- **Website:** spacing in the all-strikes panel.
+- **Version 1.1.0** (website and strike library on top of 1.0.0).
+- **Audit:** every relative link in every Markdown file resolves; ruff, mypy and the 206 default tests pass.
